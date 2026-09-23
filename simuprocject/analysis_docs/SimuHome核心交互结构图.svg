@@ -1,0 +1,238 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">SimuHome核心交互结构图</title>
+  <desc id="desc">展示 Agent、桥接层、仿真器主循环、Matter 风格设备层与房间环境反馈层之间关系的精简架构图</desc>
+  <defs>
+    <style>
+      text {
+        font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+        fill: #1f2937;
+      }
+      .title {
+        font-size: 30px;
+        font-weight: 700;
+      }
+      .subtitle {
+        font-size: 14px;
+        fill: #5b6474;
+      }
+      .panel-title {
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .box-title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .body {
+        font-size: 14px;
+        fill: #425066;
+      }
+      .small {
+        font-size: 12px;
+        fill: #6a768b;
+      }
+      .label {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .outer {
+        fill: #f8fafc;
+        stroke: #d7dfeb;
+        stroke-width: 2;
+        rx: 24;
+      }
+      .agent {
+        fill: #fff7ed;
+        stroke: #f3b36b;
+        stroke-width: 2;
+        rx: 18;
+      }
+      .bridge {
+        fill: #eef6ff;
+        stroke: #76a9df;
+        stroke-width: 2;
+        rx: 18;
+      }
+      .runtime {
+        fill: #eefbf5;
+        stroke: #6ab894;
+        stroke-width: 2;
+        rx: 18;
+      }
+      .device {
+        fill: #f4f1ff;
+        stroke: #9582de;
+        stroke-width: 2;
+        rx: 18;
+      }
+      .env {
+        fill: #fff3f7;
+        stroke: #dc8baa;
+        stroke-width: 2;
+        rx: 18;
+      }
+      .note {
+        fill: #ffffff;
+        stroke: #d8e0ec;
+        stroke-width: 1.5;
+        rx: 14;
+      }
+      .flow-cmd {
+        stroke: #2b6fde;
+        stroke-width: 3;
+        fill: none;
+        marker-end: url(#arrow-blue);
+      }
+      .flow-data {
+        stroke: #18a06b;
+        stroke-width: 3;
+        fill: none;
+        marker-end: url(#arrow-green);
+      }
+      .flow-back {
+        stroke: #c24d7d;
+        stroke-width: 3;
+        fill: none;
+        marker-end: url(#arrow-pink);
+      }
+      .flow-inner {
+        stroke: #6c7a92;
+        stroke-width: 2.5;
+        fill: none;
+        marker-end: url(#arrow-gray);
+      }
+      .dashed {
+        stroke-dasharray: 8 8;
+      }
+    </style>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2b6fde"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#18a06b"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c24d7d"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6c7a92"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="900" fill="#fbfcfe"/>
+
+  <text x="60" y="58" class="title">SimuHome 核心交互结构图</text>
+  <text x="60" y="86" class="subtitle">核心不是单次命令回执，而是“设备语义驱动 + 房间环境反馈”的闭环模拟</text>
+
+  <rect x="60" y="130" width="250" height="640" class="outer"/>
+  <text x="85" y="172" class="panel-title">Agent 侧</text>
+  <text x="85" y="196" class="subtitle">外部决策者</text>
+  <rect x="85" y="235" width="200" height="210" class="agent"/>
+  <text x="108" y="270" class="box-title">ReAct / LLM</text>
+  <text x="108" y="305" class="body">规划动作</text>
+  <text x="108" y="333" class="body">读取观测</text>
+  <text x="108" y="361" class="body">决定下一步</text>
+  <text x="108" y="398" class="small">不直接操作设备对象</text>
+
+  <rect x="85" y="485" width="200" height="210" class="note"/>
+  <text x="108" y="518" class="box-title">Agent 决策流程</text>
+
+  <rect x="108" y="540" width="154" height="34" class="agent"/>
+  <text x="130" y="562" class="small">Observe 读取观测</text>
+
+  <path d="M185 574 L185 594" class="flow-inner"/>
+
+  <rect x="108" y="594" width="154" height="34" class="agent"/>
+  <text x="128" y="616" class="small">Reason 结合目标推理</text>
+
+  <path d="M185 628 L185 648" class="flow-inner"/>
+
+  <rect x="108" y="648" width="154" height="34" class="agent"/>
+  <text x="131" y="670" class="small">Act 生成工具动作</text>
+
+  <path d="M262 665 C300 665, 312 525, 262 525 L185 525 L185 540" class="flow-back"/>
+  <text x="110" y="508" class="small">新观测返回后进入下一轮</text>
+
+  <rect x="350" y="130" width="260" height="640" class="outer"/>
+  <text x="375" y="172" class="panel-title">桥接层</text>
+  <text x="375" y="196" class="subtitle">把 Agent 动作送入仿真器</text>
+  <rect x="380" y="235" width="200" height="110" class="bridge"/>
+  <text x="404" y="272" class="box-title">Tools</text>
+  <text x="404" y="302" class="body">动作封装</text>
+  <text x="404" y="328" class="small">tool registry</text>
+  <rect x="380" y="385" width="200" height="110" class="bridge"/>
+  <text x="404" y="422" class="box-title">Client</text>
+  <text x="404" y="452" class="body">HTTP 调用</text>
+  <text x="404" y="478" class="small">smarthome client</text>
+  <rect x="380" y="535" width="200" height="145" class="bridge"/>
+  <text x="404" y="572" class="box-title">API / Queue</text>
+  <text x="404" y="602" class="body">接收请求</text>
+  <text x="404" y="630" class="body">送入 Home 队列</text>
+  <text x="404" y="658" class="small">FastAPI routes</text>
+
+  <rect x="650" y="130" width="890" height="640" class="outer"/>
+  <text x="680" y="172" class="panel-title">SimuHome 仿真器</text>
+  <text x="680" y="196" class="subtitle">主循环协调设备语义层与房间环境层</text>
+
+  <rect x="690" y="235" width="810" height="120" class="runtime"/>
+  <text x="715" y="272" class="box-title">Home 主循环</text>
+  <text x="715" y="302" class="body">推进时序，决定何时处理设备、环境、调度与 API 请求</text>
+  <text x="715" y="330" class="small">time-aware devices -> aggregators -> scheduler -> api queue</text>
+
+  <rect x="690" y="405" width="370" height="250" class="device"/>
+  <text x="715" y="442" class="box-title">Matter 风格设备语义层</text>
+  <text x="715" y="472" class="body">Device -> Endpoint -> Cluster</text>
+  <text x="715" y="500" class="body">命令校验与属性写入约束</text>
+  <text x="715" y="528" class="body">设备内部状态更新</text>
+  <rect x="720" y="560" width="310" height="70" class="note"/>
+  <text x="742" y="589" class="label">示例：空调</text>
+  <text x="742" y="614" class="small">断电时，温控相关操作不会直接成功</text>
+
+  <rect x="1130" y="405" width="370" height="250" class="env"/>
+  <text x="1155" y="442" class="box-title">房间环境反馈层</text>
+  <text x="1155" y="472" class="body">按房间聚合设备效应</text>
+  <text x="1155" y="500" class="body">重算温度、光照等环境值</text>
+  <text x="1155" y="528" class="body">回写传感器与房间观测</text>
+  <rect x="1160" y="560" width="310" height="70" class="note"/>
+  <text x="1182" y="589" class="label">关键作用</text>
+  <text x="1182" y="614" class="small">把“设备动作”转成“世界状态变化”</text>
+
+  <rect x="690" y="690" width="810" height="80" class="note"/>
+  <text x="715" y="725" class="box-title">闭环含义</text>
+  <text x="715" y="752" class="body">Agent 发命令，设备层更新可控状态，环境层生成新世界状态，下一轮观测再回到 Agent。</text>
+
+  <path d="M285 340 C320 340, 340 290, 380 290" class="flow-cmd"/>
+  <text x="302" y="320" class="label" fill="#2b6fde">结构化动作</text>
+
+  <path d="M480 345 L480 385" class="flow-cmd"/>
+  <path d="M480 495 L480 535" class="flow-cmd"/>
+
+  <path d="M580 610 C640 610, 650 300, 690 300" class="flow-cmd"/>
+  <text x="602" y="585" class="label" fill="#2b6fde">请求入队</text>
+
+  <path d="M875 355 L875 405" class="flow-inner"/>
+  <path d="M1315 355 L1315 405" class="flow-inner"/>
+  <text x="892" y="388" class="label" fill="#6c7a92">调度设备层</text>
+  <text x="1332" y="388" class="label" fill="#6c7a92">调度环境层</text>
+
+  <path d="M1060 520 L1130 520" class="flow-data"/>
+  <text x="1078" y="500" class="label" fill="#18a06b">设备状态</text>
+
+  <path d="M1130 580 C1090 580, 1090 620, 1060 620" class="flow-data dashed"/>
+  <text x="1032" y="652" class="label" fill="#18a06b">传感器回写</text>
+
+  <path d="M690 730 C620 730, 620 650, 580 650" class="flow-back"/>
+  <path d="M380 650 C330 650, 330 390, 285 390" class="flow-back"/>
+  <text x="590" y="705" class="label" fill="#c24d7d">房间 / 设备观测</text>
+
+  <rect x="60" y="805" width="1480" height="45" rx="12" fill="#ffffff" stroke="#d8e0ec" stroke-width="1.5"/>
+  <circle cx="95" cy="828" r="6" fill="#2b6fde"/>
+  <text x="110" y="833" class="small">蓝线：控制命令流</text>
+  <circle cx="255" cy="828" r="6" fill="#18a06b"/>
+  <text x="270" y="833" class="small">绿线：环境反馈流</text>
+  <circle cx="430" cy="828" r="6" fill="#c24d7d"/>
+  <text x="445" y="833" class="small">粉线：观测回流</text>
+  <circle cx="590" cy="828" r="6" fill="#6c7a92"/>
+  <text x="605" y="833" class="small">灰线：主循环内部调度</text>
+  <text x="825" y="833" class="small">关键理解：Matter 设备语义回答“设备怎么响应”，环境反馈层回答“命令后世界怎么变化”。</text>
+</svg>
