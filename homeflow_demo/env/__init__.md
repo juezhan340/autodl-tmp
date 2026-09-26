@@ -2,17 +2,15 @@
 
 ## 功能
 
-这个文件集中导出 HomeEnv 最常用的接口：`Scenario`、`Action`、`AssistantTurn`、`ToolEvent`、`TurnResult` 和 `HomeEpisodeEnv`。
-
-## 输入输出
+集中导出 V1.2 的 B 环境模块和统一数据契约。
 
 ```text
-输入：homeflow_demo.env.models 与 homeflow_demo.env.home_env
-输出：外部模块可以直接导入 Scenario、Action、AssistantTurn、ToolEvent、TurnResult、HomeEpisodeEnv
+HomeEnv
+Scenario / Home / Room / Device
+ActionSchema / ParameterSchema
+ToolCall / ToolEvent / EnvStepResult
+AssistantTurn
+SchemaValidationError / ensure_valid_scenario
 ```
 
-## 使用示例
-
-```python
-from homeflow_demo.env import Action, HomeEpisodeEnv, Scenario
-```
+V1.2 不再导出旧 `HomeEpisodeEnv` 名称。环境只接受规范化 `ToolCall`，不处理 AssistantTurn、reward 或 episode 终止。

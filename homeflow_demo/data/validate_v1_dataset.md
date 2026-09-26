@@ -2,30 +2,16 @@
 
 ## 职责
 
-检查 V1/V1.1 场景和 Oracle 轨迹能否作为下一版本 DeepSeek 教师数据流水线的输入，并重放所有可行 turn-level Oracle 轨迹。
-
-## 输入
+对冻结的 `data_processed/v1/` 做只读文件级检查，不再用 V1.2 的 HomeEnv 解释旧协议。
 
 ```text
---root：V1 数据目录，默认 homeflow_demo/data_processed/v1
+检查：文件存在、JSONL 可解析、场景与 Oracle 数量一致
+      scenario_id 唯一、场景与轨迹 ID 对齐
+不做：重写旧数据、运行旧环境、把旧轨迹迁移成 V1.2
 ```
 
-## 输出
-
-报告字段包括：
-
-```text
-每个 split 的场景数和 Oracle 数
-Oracle 成功数
-Oracle 轨迹重放结果
-turn_index 连续性、assistant_output 和 tool_events
-重复 scenario_id
-可行场景失败记录
-valid
-```
-
-## 运行方式
+V1.2 的语义、重放和评测验收请使用：
 
 ```bash
-python -m homeflow_demo.data.validate_v1_dataset
+python -m homeflow_demo.data.validate_v1_2_dataset
 ```

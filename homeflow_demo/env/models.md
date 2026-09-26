@@ -2,43 +2,46 @@
 
 ## 职责
 
-集中定义 HomeEnv 的场景、原子工具调用、模型决策 turn、工具事件和环境返回值，避免环境、数据生成器和训练器各自维护一套字典格式。
-
-## 主要数据结构
+集中定义 V1.2 的唯一数据契约。A、B、C、数据生成器和测试都复用这些类型，不再各自拼装旧版扁平字典。
 
 ```text
-GoalPredicate：设备字段目标，例如 bedroom.light.power == off
-Scenario：     episode 的静态场景、设备、目标条件和 max_turns
-metadata：     任务类型、条件和数据划分等非环境核心元数据
-Action：       一个原子工具调用
-AssistantTurn：一次 assistant 输出，可包含多个 Action
-ToolEvent：    一个 Action 的校验、执行和状态变化审计
-TurnResult：   一个 AssistantTurn 聚合后的环境反馈
-StepResult：   reset/step 后的 observation、reward、终止状态和 info
-FinalResult：  episode 的成功状态、完成度、turn 数和最终设备状态
-PredicateResult：目标条件满足情况
+Scenario
+├── Home
+│   ├── Room：房间一级实体和 device_ids 索引
+│   └── Device：sensor 或 actuator
+│       ├── state
+│       └── actions[ActionSchema]
+├── TaskSpec
+│   ├── user_request：模型可见
+│   ├── conditions：C 可见的隐藏目标
+│   ├── keep：C 可见的状态保持条件
+│   ├── category：V2 五类任务类别
+│   ├── required_observations：查询/拒绝所需观察
+│   └── expected_finish：结构化 finish 隐藏契约
+└── EpisodeConfig
 ```
 
-## 输入输出
+## 关键输入输出
 
 ```text
-输入：Python 字典、JSON 场景对象、Action、AssistantTurn 或 JSON 字符串
-输出：类型明确的 dataclass，可转换为字典或 JSON
+Scenario.from_dict(dict) -> Scenario
+Scenario.to_dict()        -> 可重放 JSON
+ToolCall                  -> C 交给 B 的统一调用：name / arguments / call_id
+AssistantTurn             -> C 解析后的一次模型决策
+ToolEvent                 -> B 的调用结果与 state_diff
+EnvStepResult             -> B 的 observation + ToolEvent
 ```
 
-## 兼容字段
+`ToolCall.from_dict()` 保留输入字段的原始类型，由 `tool_schema.py` 统一转成 `BAD_REQUEST`；不会用 `str()` 把错误类型伪装成合法工具名或 ID。
+
+V2 的 `TaskSpec.expected_finish` 保存 `completed / answered / refused`、事实和允许的拒绝理由；它只供 C 确定性审查使用。模型通过公开 `finish` 工具提交对应字段。
+
+## 边界
 
 ```text
-旧场景 max_steps：可以读取，内部按模型 turn 数解释
-新场景 max_turns：统一写入新 JSON
-FinalResult.steps：保留旧访问方式，FinalResult.turns 是新名称
-```
-
-## 不负责
-
-```text
-不负责设备状态转移
-不负责工具参数校验
-不负责 reward 计算
-不负责模型生成
+本文件只定义结构和序列化
+不解析模型厂商消息
+不校验设备动作
+不修改设备状态
+不读取隐藏目标做评测
 ```

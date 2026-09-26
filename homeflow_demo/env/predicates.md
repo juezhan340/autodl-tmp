@@ -2,37 +2,12 @@
 
 ## 职责
 
-根据当前设备状态评估场景中的目标谓词，提供环境完成度和终局成功判定。
-
-## 输入
+给 C 的 `EpisodeEvaluator` 提供隐藏条件计算。它读取 B 的运行状态深拷贝，不修改设备。
 
 ```text
-GoalPredicate 列表
-StateEngine.devices 返回的设备状态
+输入：conditions / keep + runtime_state
+支持：eq、ne、gt、ge、lt、le、in
+输出：completion、satisfied、unsatisfied、success
 ```
 
-## 输出
-
-```text
-PredicateResult.completion：满足谓词数量 / 总谓词数量
-PredicateResult.satisfied：已满足条件明细
-PredicateResult.unsatisfied：未满足条件明细
-PredicateResult.success：是否全部满足
-```
-
-## 示例
-
-```text
-目标：bedroom.light.power == off
-实际：bedroom.light.power == on
-结果：completion=0.0，success=False
-```
-
-## 不负责
-
-```text
-不修改设备状态
-不解析工具调用
-不计算非法动作惩罚
-```
-
+空 `keep` 视为全部保持成功；可行任务的 `conditions` 在 schema 层要求非空。

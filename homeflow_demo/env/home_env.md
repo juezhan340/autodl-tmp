@@ -2,73 +2,38 @@
 
 ## 职责
 
-`HomeEpisodeEnv` 是 Demo 的环境真值层。V1.1 起，公开 `step()` 的一个 step 对应一次 assistant turn；turn 内的多个工具调用由环境逐个执行并记录为 `tool_events`，最后只聚合出一条策略 transition。
-
-## 输入
+`HomeEnv` 是 V1.2 的 B 模块。它只维护家庭运行状态并执行 C 传入的规范化 `ToolCall`。
 
 ```text
-reset：Scenario 对象或场景字典
-step：AssistantTurn、Action、动作字典或 JSON 字符串
-restore：同一场景生成的 snapshot
+输入：ToolCall{name, arguments, call_id}
+输出：EnvStepResult
+      ├── observation：下一轮模型可见上下文
+      └── ToolEvent：完整 result envelope + state_diff
 ```
 
-## 输出
+## Observation 边界
 
 ```text
-reset -> observation, info
-step  -> StepResult(observation, reward, terminated, truncated, info)
-snapshot -> 可 JSON 序列化的环境状态
-trajectory -> 一条 turn 对应一条 transition，内部包含多个 tool_events
-final_result -> FinalResult，包含 turns 和兼容字段 steps
+可见：scenario_id、user_request、tools、last_tool_result
+不可见：隐藏 conditions、keep、完整设备库存、verifier 结果
 ```
 
-## 状态流转
+设备 ID 必须通过 `observe_home -> inspect_room` 发现。`elapsed_ms` 保留在 ToolEvent 审计中，但从下一轮模型 observation 删除。
+
+环境维护“已枚举家庭、已发现设备、已检查设备”三级会话状态。`observe_home` 成功后才能用返回的 `room_id` 调用 `inspect_room`；房间检查成功后，其设备 ID 才能用于 `inspect_device`；读取完整 state/actions 后才能 `execute_action`。直接猜测 ID 或动作分别返回 `UNKNOWN_*`、`BAD_REQUEST`。这些状态会进入 `snapshot/restore/fork`。
+
+`access_state` 只向 C 暴露发现权限，不包含隐藏目标或可写状态。C 用它禁止同一 assistant turn 消费前一个工具刚返回的新信息。
+
+## 不负责
 
 ```text
-reset
-  -> StateEngine 加载设备
-  -> completion 初始值
-  -> 返回用户请求、设备状态和工具 schema
-
-AssistantTurn_t
-  -> normalize_assistant_turn
-  -> 检查 max_tool_calls_per_turn
-  -> _apply_action(Action_0), _apply_action(Action_1), ...
-  -> 记录 ToolEvent_0, ToolEvent_1, ...
-  -> 汇总 completion、reward、terminated/truncated
-  -> 写入一条 turn-level trajectory
+不解析模型厂商消息
+不接受 AssistantTurn
+不处理 finish
+不管理 turn/max_turns
+不读取隐藏目标
+不计算 reward
+不判断 episode success
 ```
 
-双设备例子：一次模型输出同时关闭灯和调空调。
-
-```text
-turn_1
-  tool_event_0: bedroom.light -> off
-  tool_event_1: bedroom.air_conditioner -> 26
-  trajectory 条数 = 1
-```
-
-一个模型 completion 只对应一条 RL transition，不把后续工具调用虚构成新的策略步。
-
-## reward 规则
-
-```text
-完成度提升：2.0 * 本 turn 完成度增量
-有效状态变化：+0.02 / 个发生变化的控制调用
-无效重复：-0.10 / 个重复控制调用
-非法工具调用：-0.30 / 个
-finish 成功：+1.00
-finish 失败：-0.50
-turn 成本：-0.01
-```
-
-## 重要边界
-
-```text
-目标条件只由环境内部持有，不放进 observation
-DeepSeek、训练器和评测器不能直接修改设备状态
-非法工具调用写入 tool_event，但不会修改设备状态
-超过单 turn 工具上限时，整个 turn 不执行
-max_turns 统计 assistant 输出次数，不统计工具调用数
-同一场景必须通过 reset/fork 生成独立 rollout
-```
+`snapshot/restore/fork` 用于生成相同初始状态且互相隔离的 rollout。

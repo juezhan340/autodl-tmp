@@ -2,37 +2,24 @@
 
 ## 职责
 
-在不调用语言模型的情况下，为 V1 场景生成一条规则 Oracle 动作序列，并通过 V1.1 HomeEnv 执行验证。每个规则动作会被兼容包装为一个 synthetic assistant turn。
-
-## 输入
+把 `OraclePolicy` 接入 `EpisodeRunner`，统一生成参考计划和 C 模块评测后的 V1.2 轨迹。规划器不再直接调用环境，也不维护另一套成功判定。
 
 ```text
-Scenario 对象或场景字典
+Scenario
+  -> OraclePolicy：产生发现式 ToolCall
+  -> EpisodeRunner：管理 A/B 回合
+  -> EpisodeEvaluation：成功、错误、reward、SFT 门禁
 ```
 
-## 输出
+## 输入输出
 
 ```text
-plan_scenario -> PlanResult
-run_oracle_episode -> JSON 可序列化轨迹字典，主字段为 turns
+plan_scenario(Scenario) -> PlanResult
+  feasible：场景定义的可行性标签
+  calls：规范 ToolCall 序列
+  reason：不可行任务的预期失败原因
+
+run_oracle_episode(Scenario) -> 完整 V1.2 轨迹字典
 ```
 
-## 规划规则
-
-```text
-目标字段已满足：跳过控制
-requires_query=True：先生成 query_device
-目标字段未满足：映射到 control_device
-目标值超出工具范围：feasible=False
-所有目标完成后：追加 finish
-每个原子规划动作：包装为一个 assistant turn，保留 tool_events
-```
-
-## 不负责
-
-```text
-不处理自然语言
-不调用 DeepSeek
-不搜索复杂动作树
-不生成随机错误轨迹
-```
+`sensor_readonly` 和 `missing_device` 会保留为经过环境验证的失败轨迹，不伪造成 Oracle 成功样本。

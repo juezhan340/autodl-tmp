@@ -9,7 +9,7 @@
 ├── Git 核心
 │   ├── homeflow_demo/            HomeEnv 与数据构建实现
 │   ├── tests/                    自动测试
-│   ├── doc/                      01-12 号设计与实施文档
+│   ├── doc/                      01-14 号设计与实施文档
 │   ├── UbiComp三支柱讨论/         自主研究讨论
 │   ├── simuprocject/analysis_docs/ SimuHome 自主分析
 │   ├── simuprocject/structure/   自主结构记录

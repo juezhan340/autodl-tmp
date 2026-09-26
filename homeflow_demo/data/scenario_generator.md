@@ -2,48 +2,32 @@
 
 ## 职责
 
-生成 V1 的训练、验证和测评场景。生成过程只使用本地规则和固定随机种子，不调用 DeepSeek。
-
-## 输入
+按固定 seed 生成 V1.2 `Scenario`。每条数据包含完整 Home 快照、用户请求、隐藏 conditions/keep 和回合配置，生成后立即通过 `schema.py` 校验。
 
 ```text
-seed：随机种子
-count：场景数量
-split：train、val 或 eval
+固定家庭
+  卧室：温湿度传感器、主灯、空调
+  卫生间：湿度传感器、排风扇
+  客厅：主灯
+  厨房：插座
+  书房：空房间，用于缺少目标设备任务
+
+八类任务
+  single_control / multi_control / query_then_control
+  temperature_threshold / humidity_threshold
+  correct_no_op / sensor_readonly / missing_device
 ```
 
-## 输出
+温湿度阈值任务把传感器写入 `metadata.context_device_ids`，Oracle 会先发现并读取这些设备，再处理目标执行器。`sensor_readonly` 和 `missing_device` 标为不可行，用于验证拒绝轨迹和边界错误。
 
-每条场景包含：
+阈值初始值按同类任务的循环编号变化，训练、验证和测评中都会同时出现“超过阈值需要控制”和“未超过阈值正确不动作”分支。
+
+## 输入输出
 
 ```text
-scenario_id
-seed
-user_request
-devices
-goal.predicates
-max_turns
-max_tool_calls_per_turn
-metadata
+ScenarioGenerator(seed).generate(count, split)
+  输入：count，train|val|eval
+  输出：通过 schema 校验的 Scenario 字典列表
 ```
 
-`metadata` 记录任务类型、设备组合、目标组合、语言变体组和是否可行。
-
-## V1 任务类型
-
-```text
-single_control
-multi_control
-query_then_control
-brightness_control
-lock_control
-impossible_temperature
-```
-
-## 可复现要求
-
-```text
-同一 seed、同一 count、同一 split 顺序 -> 相同场景内容
-不修改 Python 全局随机数状态
-每个场景的设备状态使用深拷贝，避免嵌套状态共享
-```
+同一个生成器连续生成三个 split 时，`scenario_id` 不重叠；相同 seed 和调用顺序得到相同数据。

@@ -2,42 +2,29 @@
 
 ## 职责
 
-在场景进入 `HomeEpisodeEnv` 之前，检查设备、设备状态字段、目标谓词、最大步数、动作名和参数容器的结构，避免错误数据进入状态机。
-
-## 输入
+在 Scenario 进入 HomeEnv 前一次性检查结构和引用，防止错误场景在运行中才暴露。
 
 ```text
-场景字典
-动作字典
+校验对象
+  房间：room_id、display_name、device_ids
+  设备：device_id、room_id、kind、device_type、state、actions
+  关系：Room.device_ids 与 Device.room_id 双向一致
+  传感器：actions 必须为空；每个房间最多一个温度源和一个湿度源
+  动作：参数类型、范围、步长、枚举
+  动作签名：开关动作无参数；mode/value 参数名固定；温度和百分比必须公开范围与步长
+  运行值域：set_temperature 保持在 7～32；set_percentage 保持在 0～100
+  模式值域：set_mode 只能公开 off / cool / heat / auto
+  隐藏任务：conditions/keep、required_observations、expected_finish 引用存在的实体字段
+  V2 类别：single_control / multi_control / vague_intent / dangerous_refusal / environment_query
+  回合：max_turns、max_tool_calls_per_turn
+  元数据：feasible 必须是布尔值，数值字段拒绝 NaN/Infinity
 ```
 
-## 输出
+## 输入输出
 
 ```text
-validate_scenario_dict -> 错误字符串列表
-ensure_valid_scenario -> Scenario
-validate_action_dict -> 错误字符串列表
-ensure_valid_action -> Action
+validate_scenario_dict(dict) -> 全部错误字符串
+ensure_valid_scenario(dict)  -> Scenario
 ```
 
-## 失败行为
-
-```text
-校验失败：抛出 SchemaValidationError
-校验成功：返回类型明确的 dataclass
-```
-
-## 校验范围
-
-```text
-场景必需字段：scenario_id、user_request、devices、goal
-设备类型：light、thermostat、switch、lock
-设备字段：每类设备只能使用 V1 工具支持的状态字段
-初始值域：power、brightness、color_temp、temperature、mode、locked 必须满足工具值域
-目标谓词：引用已存在设备和字段
-max_turns：1～64；旧字段 max_steps 仍可读取
-max_tool_calls_per_turn：1～64
-动作名：query_device、control_device、finish
-```
-
-这个模块只做场景和动作对象的结构校验；设备命令和值域、查询字段存在性仍由 `tool_schema.py` 做运行时校验。
+校验失败抛出 `SchemaValidationError`。`answered` 和 `refused` 任务允许没有 conditions，但必须由 C 检查 required observations 和 expected finish。模块不执行工具、不修改状态，也不判断一次模型轨迹是否成功。
