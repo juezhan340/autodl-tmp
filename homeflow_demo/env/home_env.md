@@ -18,11 +18,9 @@
 不可见：隐藏 conditions、keep、完整设备库存、verifier 结果
 ```
 
-设备 ID 必须通过 `observe_home -> inspect_room` 发现。`elapsed_ms` 保留在 ToolEvent 审计中，但从下一轮模型 observation 删除。
+`observe_home` 不返回 `device_id`。外部模型要拿到 id，只能自己去 `inspect_room`。这是观察内容，不是执行器闸门。`elapsed_ms` 保留在 ToolEvent 审计中，从下一轮模型 observation 删除。
 
-环境维护“已枚举家庭、已发现设备、已检查设备”三级会话状态。`observe_home` 成功后才能用返回的 `room_id` 调用 `inspect_room`；房间检查成功后，其设备 ID 才能用于 `inspect_device`；读取完整 state/actions 后才能 `execute_action`。直接猜测 ID 或动作分别返回 `UNKNOWN_*`、`BAD_REQUEST`。这些状态会进入 `snapshot/restore/fork`。
-
-`access_state` 只向 C 暴露发现权限，不包含隐藏目标或可写状态。C 用它禁止同一 assistant turn 消费前一个工具刚返回的新信息。
+`inspect_room` / `inspect_device` / `execute_action` 不检查有没有先观察。真实 id 可以直接执行；房间或设备不存在才返回 `UNKNOWN_*`。参数越界返回 `BAD_REQUEST`，动作不支持返回 `UNSUPPORTED_ACTION`。`snapshot/restore/fork` 只复制家庭状态和事件，不保存发现权限。
 
 ## 不负责
 

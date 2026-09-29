@@ -71,8 +71,8 @@ class EpisodeRunnerV12Test(unittest.TestCase):
         self.assertFalse(run.evaluation.accepted_for_sft)
         self.assertIn("post_terminal_action", run.evaluation.rejection_reasons)
 
-    def test_same_turn_discovery_dependency_is_rejected(self) -> None:
-        """确认模型不能在一个输出中消费刚获得的房间目录。"""
+    def test_same_turn_inspect_after_observe_is_allowed(self) -> None:
+        """确认同一输出里连续 observe 和 inspect 不再被状态机拦截。"""
         scenario = build_demo_scenario()
         policy = FixedPolicy(
             [
@@ -89,9 +89,10 @@ class EpisodeRunnerV12Test(unittest.TestCase):
             ]
         )
         run = EpisodeRunner(policy).run(scenario)
-        self.assertGreaterEqual(run.evaluation.strategy_error_count, 1)
-        self.assertTrue(run.evaluation.trajectory_replayable)
-        self.assertFalse(run.evaluation.accepted_for_sft)
+        self.assertEqual(run.evaluation.strategy_error_count, 0)
+        names = [event["tool_name"] for turn in run.trajectory["turns"] for event in turn["tool_events"]]
+        self.assertIn("observe_home", names)
+        self.assertIn("inspect_room", names)
 
     def test_openai_response_and_plain_text_are_normalized(self) -> None:
         """确认 OpenAI function call 和纯文本终答进入统一 ToolCall。"""

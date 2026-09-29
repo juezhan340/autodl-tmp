@@ -19,4 +19,4 @@ apply_trajectory_quality(evaluation, trajectory, scenario)
 
 环境故障导致的 truncated 轨迹可以在没有 `finish` 的情况下判定为可重放；可重放只证明执行确定性，不会覆盖环境故障的 rejected 结论。
 
-重放器也复现 C 的同回合依赖限制，确保质量门禁验证的是完整 A/C/B 轨迹，而非只验证 B 的单步执行。
+重放器按轨迹里的规范 ToolCall 依次调用 B，不复现已经删除的发现链闸门。

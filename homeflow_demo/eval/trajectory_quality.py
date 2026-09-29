@@ -59,9 +59,6 @@ def replay_trajectory(scenario: Scenario, trajectory: dict[str, Any]) -> bool:
             calls = assistant_output.get("tool_calls", [])
             recorded_events = turn.get("tool_events", [])
             event_cursor = 0
-            from .episode_runner import EpisodeRunner
-
-            access_before_turn = env.access_state
             for call_data in calls:
                 call = ToolCall.from_dict(call_data)
                 if finished:
@@ -82,18 +79,7 @@ def replay_trajectory(scenario: Scenario, trajectory: dict[str, Any]) -> bool:
                         return False
                     finished = True
                     continue
-                dependency_error = EpisodeRunner._same_turn_dependency_error(
-                    call, access_before_turn
-                )
-                if dependency_error is not None:
-                    actual = EpisodeRunner._shape_error_event(
-                        call,
-                        "BAD_REQUEST",
-                        dependency_error,
-                        "依赖工具结果的调用必须放到下一次 assistant turn",
-                    )
-                else:
-                    actual = env.step(call).event.to_dict()
+                actual = env.step(call).event.to_dict()
                 if event_cursor >= len(recorded_events):
                     return False
                 expected = recorded_events[event_cursor]

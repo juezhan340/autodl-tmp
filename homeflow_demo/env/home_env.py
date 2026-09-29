@@ -27,9 +27,6 @@ class HomeEnv:
         self._engine: StateEngine | None = None
         self._last_policy_result: dict[str, Any] | None = None
         self._events: list[dict[str, Any]] = []
-        self._discovered_device_ids: set[str] = set()
-        self._inspected_device_ids: set[str] = set()
-        self._home_observed = False
 
     def reset(
         self,
@@ -41,9 +38,6 @@ class HomeEnv:
         self._engine = StateEngine(self._scenario.home)
         self._last_policy_result = None
         self._events = []
-        self._discovered_device_ids = set()
-        self._inspected_device_ids = set()
-        self._home_observed = False
         observation = self.observation()
         info = {
             "scenario_id": self._scenario.scenario_id,
@@ -105,16 +99,6 @@ class HomeEnv:
         """返回完整工具事件审计记录。"""
         return deepcopy(self._events)
 
-    @property
-    def access_state(self) -> dict[str, Any]:
-        """向 C 暴露本回合开始时的发现权限，不暴露隐藏目标。"""
-        self._ensure_ready()
-        return {
-            "home_observed": self._home_observed,
-            "discovered_device_ids": sorted(self._discovered_device_ids),
-            "inspected_device_ids": sorted(self._inspected_device_ids),
-        }
-
     def snapshot(self) -> dict[str, Any]:
         """保存 B 模块的场景、状态、上次结果和事件。"""
         self._ensure_ready()
@@ -123,9 +107,6 @@ class HomeEnv:
             "engine": self._engine.snapshot(),
             "last_policy_result": copy_json(self._last_policy_result),
             "events": deepcopy(self._events),
-            "discovered_device_ids": sorted(self._discovered_device_ids),
-            "inspected_device_ids": sorted(self._inspected_device_ids),
-            "home_observed": self._home_observed,
         }
 
     def restore(self, snapshot: dict[str, Any]) -> None:
@@ -138,22 +119,6 @@ class HomeEnv:
         self._engine.restore(snapshot["engine"])
         self._last_policy_result = copy_json(snapshot.get("last_policy_result"))
         self._events = deepcopy(snapshot.get("events", []))
-        discovered = snapshot.get("discovered_device_ids", [])
-        if not isinstance(discovered, list) or not all(isinstance(item, str) for item in discovered):
-            raise ValueError("snapshot discovered_device_ids must be string[]")
-        if not set(discovered).issubset(self._scenario.home.devices):
-            raise ValueError("snapshot contains unknown discovered device ids")
-        self._discovered_device_ids = set(discovered)
-        inspected = snapshot.get("inspected_device_ids", [])
-        if not isinstance(inspected, list) or not all(isinstance(item, str) for item in inspected):
-            raise ValueError("snapshot inspected_device_ids must be string[]")
-        if not set(inspected).issubset(self._discovered_device_ids):
-            raise ValueError("snapshot contains undiscovered inspected device ids")
-        self._inspected_device_ids = set(inspected)
-        home_observed = snapshot.get("home_observed", False)
-        if not isinstance(home_observed, bool):
-            raise ValueError("snapshot home_observed must be boolean")
-        self._home_observed = home_observed
 
     def fork(self) -> "HomeEnv":
         """复制当前环境，保证多条 rollout 的状态互相隔离。"""
@@ -164,42 +129,14 @@ class HomeEnv:
     def _execute(self, call: ToolCall, started: float) -> tuple[dict[str, Any], dict[str, Any]]:
         """分发四个家庭语义工具并统一成功或失败结果。"""
         if call.name == "observe_home":
-            self._home_observed = True
             return success_envelope(self._engine.observe_home(), self._elapsed_ms(started)), {}
         if call.name == "inspect_room":
-            if not self._home_observed:
-                return (
-                    error_envelope(
-                        "UNKNOWN_ROOM",
-                        "rooms are not visible before observe_home",
-                        self._elapsed_ms(started),
-                        "先调用 observe_home 获取 room_id",
-                    ),
-                    {},
-                )
             validation, data = self._engine.inspect_room(str(call.arguments["room_id"]))
-            if validation.valid and data:
-                self._discovered_device_ids.update(
-                    item["device_id"] for item in data["room"]["devices"]
-                )
         elif call.name == "inspect_device":
-            device_id = str(call.arguments["device_id"])
-            discovery_error = self._require_discovered(device_id)
-            if discovery_error is not None:
-                return discovery_error, {}
-            validation, data = self._engine.inspect_device(device_id)
-            if validation.valid:
-                self._inspected_device_ids.add(device_id)
+            validation, data = self._engine.inspect_device(str(call.arguments["device_id"]))
         else:
-            device_id = str(call.arguments["device_id"])
-            discovery_error = self._require_discovered(device_id)
-            if discovery_error is not None:
-                return discovery_error, {}
-            inspection_error = self._require_inspected(device_id)
-            if inspection_error is not None:
-                return inspection_error, {}
             validation, data, state_diff = self._engine.execute_action(
-                device_id,
+                str(call.arguments["device_id"]),
                 str(call.arguments["action"]),
                 copy_json(call.arguments["params"]),
             )
@@ -224,28 +161,6 @@ class HomeEnv:
                 validation.hint,
             ),
             {},
-        )
-
-    def _require_discovered(self, device_id: str) -> dict[str, Any] | None:
-        """阻止策略用猜测 ID 绕过 inspect_room 的设备发现流程。"""
-        if device_id in self._discovered_device_ids:
-            return None
-        return error_envelope(
-            "UNKNOWN_DEVICE",
-            f"device is not visible before room inspection: {device_id}",
-            0.0,
-            "先调用 observe_home，再调用 inspect_room 获取该房间的 device_id",
-        )
-
-    def _require_inspected(self, device_id: str) -> dict[str, Any] | None:
-        """要求策略读取设备 actions 后再提交控制。"""
-        if device_id in self._inspected_device_ids:
-            return None
-        return error_envelope(
-            "BAD_REQUEST",
-            f"device actions are not visible before inspection: {device_id}",
-            0.0,
-            "先调用 inspect_device 获取 state 和 actions",
         )
 
     @staticmethod

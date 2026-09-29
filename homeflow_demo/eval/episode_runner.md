@@ -35,7 +35,7 @@ C -> EpisodeEvaluator：隐藏目标、最终 reward、质量门禁
 
 厂商或统一响应必须提供 `id/call_id`；C 不为缺失 ID 的工具调用静默补值，缺失时按 `BAD_REQUEST` 记录协议错误。
 
-C 在每次 assistant turn 开始时冻结 B 的 `access_state`。同一输出里的 `observe_home -> inspect_room`、`inspect_room -> inspect_device` 或 `inspect_device -> execute_action` 依赖链会返回 `BAD_REQUEST`，模型必须读取工具结果后在下一 turn 决策；已经在历史 turn 发现的多个独立设备仍可同回合操作。
+C 不拦截同一输出里的 observe / inspect / execute。发现链不是状态机规则。外部模型仍然需要先查，因为 `observe_home` 不返回 `device_id`。
 
 `finish` 由 C 处理，不发送给 B。它只结束 episode，不属于家庭设备语义写操作。
 

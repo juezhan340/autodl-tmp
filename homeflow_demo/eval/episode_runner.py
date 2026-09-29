@@ -86,7 +86,6 @@ class EpisodeRunner:
             raw_response = self.policy.respond(context)
             assistant_turn = parse_assistant_response(raw_response, turn_index)
             events: list[dict[str, Any]] = []
-            access_before_turn = self.env.access_state
             reward_components: dict[str, float] = {
                 "goal_progress": 0.0,
                 "valid_action": 0.0,
@@ -120,21 +119,6 @@ class EpisodeRunner:
                     if not validation.valid:
                         parse_error_count += 1
                         events.append(self._shape_error_event(call, validation.code or "BAD_REQUEST", validation.message or "invalid call", validation.hint))
-                        reward_components["strategy_error"] -= 0.10
-                        protocol_feedback = self._feedback_from_event(events[-1])
-                        continue
-                    dependency_error = self._same_turn_dependency_error(
-                        call, access_before_turn
-                    )
-                    if dependency_error is not None:
-                        events.append(
-                            self._shape_error_event(
-                                call,
-                                "BAD_REQUEST",
-                                dependency_error,
-                                "依赖工具结果的调用必须放到下一次 assistant turn",
-                            )
-                        )
                         reward_components["strategy_error"] -= 0.10
                         protocol_feedback = self._feedback_from_event(events[-1])
                         continue
@@ -300,26 +284,6 @@ class EpisodeRunner:
             state_diff={},
         )
         return event.to_dict()
-
-    @staticmethod
-    def _same_turn_dependency_error(
-        call: ToolCall,
-        access_before_turn: dict[str, Any],
-    ) -> str | None:
-        """阻止一次模型输出消费同一输出中更早工具调用的新结果。"""
-        if call.name == "inspect_room" and not access_before_turn["home_observed"]:
-            return "inspect_room requires observe_home from an earlier assistant turn"
-        device_id = call.arguments.get("device_id")
-        if call.name == "inspect_device" and device_id not in set(
-            access_before_turn["discovered_device_ids"]
-        ):
-            return "inspect_device requires inspect_room from an earlier assistant turn"
-        if call.name == "execute_action" and device_id not in set(
-            access_before_turn["inspected_device_ids"]
-        ):
-            return "execute_action requires inspect_device from an earlier assistant turn"
-        return None
-
 
 def parse_assistant_response(raw_response: Any, turn_index: int) -> AssistantTurn:
     """把常见 OpenAI 兼容响应或 JSON 响应解析为统一 AssistantTurn。"""

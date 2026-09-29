@@ -7,9 +7,10 @@
 ```text
 /root/autodl-tmp
 ├── Git 核心
-│   ├── homeflow_demo/            HomeEnv 与数据构建实现
+│   ├── new_demo/                 新代码根（17/18 的 D0–D6，尚未写完）
+│   ├── homeflow_demo/            旧 V1.2/V2 只读参考，不再打补丁
 │   ├── tests/                    自动测试
-│   ├── doc/                      01-14 号设计与实施文档
+│   ├── doc/                      设计与实施文档
 │   ├── UbiComp三支柱讨论/         自主研究讨论
 │   ├── simuprocject/analysis_docs/ SimuHome 自主分析
 │   ├── simuprocject/structure/   自主结构记录
@@ -21,7 +22,8 @@
 │   └── models/                   模型权重
 └── 本地状态
     ├── .autodl/                  平台状态
-    ├── homeflow_demo/.env.deepseek 私密 API 配置
+    ├── new_demo/.env.deepseek    新包私密 API 配置（当前填写处）
+    ├── homeflow_demo/.env.deepseek 旧 demo 私密 API 配置，不再作为主入口
     ├── **/data_raw/              API 原始响应
     └── **/checkpoints/、**/out/  训练产物
 ```
@@ -85,14 +87,14 @@ PDF 的中文翻译版和提取文本可能来自本地阅读工具，不能由 
 
 ## 5. 私密配置与生成数据
 
-DeepSeek 配置固定放在 `homeflow_demo/.env.deepseek`，该文件不会被 Git 跟踪。字段、默认值和安全约束见 `homeflow_demo/.env.deepseek.md`。真实密钥只在本机填写，不写入本文件、日志、JSONL 或提交记录。
+新包 DeepSeek 配置固定放在 `new_demo/.env.deepseek`，该文件不会被 Git 跟踪。字段、默认值和安全约束见 `new_demo/.env.deepseek.md`。真实密钥只在本机填写，不写入本文件、日志、JSONL 或提交记录。旧 demo 的 `homeflow_demo/.env.deepseek` 只服务历史 V2 smoke，不再作为新管线入口。
 
 ```text
-输入配置：homeflow_demo/.env.deepseek
+输入配置：new_demo/.env.deepseek
     ↓
-原始响应：homeflow_demo/data_raw/             Git 忽略
+原始响应：new_demo/data_raw/api/             Git 忽略
     ↓ 解析与 HomeEnv 重放验证
-交付数据：homeflow_demo/data_processed/       小型、可审计版本可进入 Git
+交付数据：new_demo/data_processed/           小型、可审计版本可进入 Git
     ↓
 训练产物：checkpoints/、out/、runs/、wandb/   Git 忽略
 ```
