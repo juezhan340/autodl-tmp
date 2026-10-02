@@ -12,6 +12,8 @@
   --workers          并发数，默认 2
   --max-turns        轮次上限，默认 12（覆盖评测集里的 10）
   --limit / --task-ids  只跑前 N 条或指定 task_id
+  --few-shot         在 system 与用户话之间插入三段完整交互示例（控制/拒绝/查询）
+                     只影响评测会话，不改 D0_templates 里的任何提示词文件
 
 输出（--output-dir）
   local_model.env    指向本地服务的 DeepSeek_* 配置

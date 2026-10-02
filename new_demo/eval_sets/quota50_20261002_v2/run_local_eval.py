@@ -17,6 +17,44 @@ from new_demo.agents.A_policy import DeepSeekPolicy
 from new_demo.agents.DeepSeek_client import DeepSeekClient
 from new_demo.eval.C_episode_runner import EpisodeRunner
 
+# 本地小模型 few-shot：三段完整交互示例，演示先观察、用真实 id、只发一个 JSON、finish 契约
+FEWSHOT_MESSAGES = [
+    {"role": "user", "content": "把卧室台灯关掉。"},
+    {"role": "assistant", "content": '{"name":"observe_home","arguments":{}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"rooms":[{"room_id":"room_bedroom","display_name":"卧室"},{"room_id":"room_living","display_name":"客厅"}]}}'},
+    {"role": "assistant", "content": '{"name":"inspect_room","arguments":{"room_id":"room_bedroom"}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"room":{"room_id":"room_bedroom","devices":[{"device_id":"device_bedroom_lamp","display_name":"卧室台灯"}]}}}'},
+    {"role": "assistant", "content": '{"name":"inspect_device","arguments":{"device_id":"device_bedroom_lamp"}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"device":{"device_id":"device_bedroom_lamp","state":{"on":true,"level":80},"actions":[{"action":"turn_on","params":{}},{"action":"turn_off","params":{}}]}}}'},
+    {"role": "assistant", "content": '{"name":"execute_action","arguments":{"device_id":"device_bedroom_lamp","action":"turn_off","params":{}}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"changed":true,"state_after":{"on":false,"level":80}}}'},
+    {"role": "assistant", "content": '{"name":"finish","arguments":{"summary":"卧室台灯已关闭。","outcome":"completed"}}'},
+    {"role": "user", "content": "把卧室空调调到三度。"},
+    {"role": "assistant", "content": '{"name":"observe_home","arguments":{}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"rooms":[{"room_id":"room_bedroom","display_name":"卧室"}]}}'},
+    {"role": "assistant", "content": '{"name":"inspect_room","arguments":{"room_id":"room_bedroom"}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"room":{"room_id":"room_bedroom","devices":[{"device_id":"device_bedroom_climate","display_name":"卧室空调"}]}}}'},
+    {"role": "assistant", "content": '{"name":"inspect_device","arguments":{"device_id":"device_bedroom_climate"}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"device":{"device_id":"device_bedroom_climate","state":{"on":true,"target":27.0},"actions":[{"action":"set_temperature","params":{"value":{"minimum":7.0,"maximum":32.0,"step":0.5}}}]}}}'},
+    {"role": "assistant", "content": '{"name":"finish","arguments":{"summary":"三度低于可调下限七度，无法设置，未做修改。","outcome":"refused","reason_code":"OUT_OF_SAFE_RANGE"}}'},
+    {"role": "user", "content": "卧室现在多少度？"},
+    {"role": "assistant", "content": '{"name":"observe_home","arguments":{}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"rooms":[{"room_id":"room_bedroom","display_name":"卧室"}]}}'},
+    {"role": "assistant", "content": '{"name":"inspect_room","arguments":{"room_id":"room_bedroom"}}'},
+    {"role": "user", "content": 'observation: {"ok":true,"data":{"room":{"room_id":"room_bedroom","environment":{"temperature":24.5},"devices":[{"device_id":"sensor_bedroom_env","display_name":"卧室温湿度传感器"}]}}}'},
+    {"role": "assistant", "content": '{"name":"finish","arguments":{"summary":"卧室现在约 24.5 度。","outcome":"completed"}}'},
+]
+
+
+class FewShotPolicy(DeepSeekPolicy):
+    """评测用策略：在 system 与真实用户话之间插入 few-shot 交互示例。"""
+
+    def _start_episode(self, observation: dict, context: dict) -> None:
+        """先按父类建 system+user，再把 few-shot 示例插到用户话之前。"""
+        super()._start_episode(observation, context)
+        if len(self._messages) >= 2:
+            self._messages = [self._messages[0]] + FEWSHOT_MESSAGES + [self._messages[-1]]
+
 
 def load_jsonl(path: str | Path) -> list[dict]:
     """读一行一个 JSON 对象的文件。"""
@@ -68,7 +106,8 @@ def run_one(
     started = time.time()
     row: dict = {"task_id": task_row["task_id"], "category": task_row["category"]}
     try:
-        result = EpisodeRunner(DeepSeekPolicy(client)).run(scenario)
+        policy = FewShotPolicy(client) if args.few_shot else DeepSeekPolicy(client)
+        result = EpisodeRunner(policy).run(scenario)
         record = result.record
         row.update(
             {
@@ -110,6 +149,7 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--task-ids", default="", help="逗号分隔，只跑这些任务")
+    parser.add_argument("--few-shot", action="store_true", help="在 system 与用户话之间插入 few-shot 示例")
     args = parser.parse_args()
 
     tasks = load_jsonl(args.tasks_file)
@@ -152,6 +192,7 @@ def main() -> None:
         "max_turns": args.max_turns,
         "server": args.server,
         "model": args.model,
+        "few_shot": args.few_shot,
     }
     (out_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
