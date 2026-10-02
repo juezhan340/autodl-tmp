@@ -1,11 +1,21 @@
-# 本机 1.5B LoRA 微调可行性评估
+# newdoc 08　本机 1.5B LoRA 可行性评估
+
+> 来源：`13_本机1.5B_LoRA可行性评估.md`（独立主题，原样保留，仅标题层级下调一级）。
+
+---
+
+# 一、可行性评估全文
+
+> 来源：newdoc/13_本机1.5B_LoRA可行性评估.md（原文逐字，仅标题层级下调一级）
+
+## 本机 1.5B LoRA 微调可行性评估
 
 > 日期：2026-10-03
 > 机器：RTX 5060 Laptop，8151 MiB 显存，驱动 591.74（桌面基线约 0.9 GB）
 > 结论：支持，但要降序列长度；推荐复用本机已跑通的手写脚本，不建议先上 TRL。
 > 本文件只做评估，没有跑任何训练或标定。
 
-## 0 结论
+### 0 结论
 
 ```text
 能不能做        能做：8 GB 上做 1.5B 的 LoRA（bf16 + 梯度检查点）
@@ -16,7 +26,7 @@
 更高余量方案    装 bitsandbytes 走 4-bit QLoRA（venv 里目前没有 bnb，属于新增依赖）
 ```
 
-## 1 本机已有的训练证据
+### 1 本机已有的训练证据
 
 ```text
 训练环境    D:\D_program\venvs\minimind（Python 3.12.13）
@@ -40,7 +50,7 @@ bf16 权重 + LoRA r16 / alpha32 / dropout0.05 / all-linear
 --calibrate：只跑 6 步，实测峰值显存与吞吐，再外推总时长
 ```
 
-## 2 1.5B 的显存账（推算）
+### 2 1.5B 的显存账（推算）
 
 ```text
 Qwen2.5-1.5B（1.78B 参数）bf16 权重     ≈ 3.5 GB
@@ -55,7 +65,7 @@ LoRA 参数 + 梯度 + Adam 状态            < 0.3 GB（只训 adapter）
 
 所以你的担心是对的：1.5B + 8192 序列在 8 GB 上容易 OOM；把序列压到 2048–4096 后可行。
 
-## 3 TRL 还是手写
+### 3 TRL 还是手写
 
 ```text
 维度            手写 train_lora.py（推荐）           TRL SFTTrainer
@@ -70,7 +80,7 @@ LoRA 参数 + 梯度 + Adam 状态            < 0.3 GB（只训 adapter）
 建议：第一轮用现有 `train_lora.py` 跑 1.5B（`--max-seq 4096`，先 `--calibrate`）；
 如果确认显存仍有富余，再考虑 TRL 或 QLoRA。
 
-## 4 若之后要跑（本轮未执行）
+### 4 若之后要跑（本轮未执行）
 
 ```text
 1  先停 llama-server，释放约 4.3 GB
@@ -82,7 +92,7 @@ LoRA 参数 + 梯度 + Adam 状态            < 0.3 GB（只训 adapter）
      触发 guard → 降到 --max-seq 2048，或改装 bitsandbytes 走 QLoRA
 ```
 
-## 5 文件
+### 5 文件
 
 ```text
 手写训练脚本   D:\D_program\models\Qwen3-0.6B-sft-off-lora\run_bundle_20260930\train_lora.py
@@ -90,3 +100,5 @@ LoRA 参数 + 梯度 + Adam 状态            < 0.3 GB（只训 adapter）
 底模           D:\D_program\models\Qwen2.5-1.5B-Instruct
 训练日志       D:\D_program\logs\grpo_r0_train_master.out、sft_off_train.log.jsonl
 ```
+
+
