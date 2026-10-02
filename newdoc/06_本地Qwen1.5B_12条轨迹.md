@@ -1,30 +1,20 @@
-# newdoc 03　本地 Qwen2.5-1.5B 评测（12 条 → 100 条 → LoRA 可行性）
-
-> 合并自 `06`、`08`、`09`、`14`、`13`。含无 few-shot 基线、全局与分类 few-shot 三轮、换批稳定性验证、LoRA 可行性评估。
-
----
-
-# 一、无 few-shot：12 条轨迹
-
-> 来源：newdoc/06_本地Qwen1.5B_12条轨迹.md（原文逐字，仅标题层级下调一级）
-
-## 本地 Qwen2.5-1.5B 12 条轨迹
+# 本地 Qwen2.5-1.5B 12 条轨迹
 
 > 来源：`new_demo/runs/qwen15b_eval_12/`
 > 服务：llama.cpp b10991（Vulkan 版），Qwen2.5-1.5B-Instruct Q8_0，2 slot × 32K，端口 18080
 > 评测：2 路并发、12 轮上限、未加 few-shot；12 条总用时 8.3 秒
 > 文件：`trajectories.jsonl`（完整 record）、`results.jsonl`（标签）、`api/completions.jsonl`（模型原文）
 
-### 0 总体
+## 0 总体
 
 ```text
 任务数 12；C 四项全过 0；起手 observe_home 0/12
 主要问题：不先观察、编造 device_id、一条消息里塞多个 JSON、finish 契约缺失
 ```
 
-### 1 逐条轨迹
+## 1 逐条轨迹
 
-#### 1. `sc_T1_002` · T1 · 用时 1.4s
+### 1. `sc_T1_002` · T1 · 用时 1.4s
 
 ```text
 用户话：回到家了，把主卧主灯关掉吧。
@@ -53,7 +43,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 3}
 ```
 
-#### 2. `sc_T1_001` · T1 · 用时 0.7s
+### 2. `sc_T1_001` · T1 · 用时 0.7s
 
 ```text
 用户话：晚上回来习惯把客厅加湿器打开，帮我开一下吧。
@@ -78,7 +68,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 1}
 ```
 
-#### 3. `sc_T2_006` · T2 · 用时 1.2s
+### 3. `sc_T2_006` · T2 · 用时 1.2s
 
 ```text
 用户话：我下班回来了，把厨房洗碗机开起来，厨房冰箱调低一点，厨房烤箱别动。
@@ -105,7 +95,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 1}
 ```
 
-#### 4. `sc_T1_003` · T1 · 用时 4.2s
+### 4. `sc_T1_003` · T1 · 用时 4.2s
 
 ```text
 用户话：书房有点冷，把书房空调调高一点吧。
@@ -146,7 +136,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 9}
 ```
 
-#### 5. `sc_T2_002` · T2 · 用时 1.6s
+### 5. `sc_T2_002` · T2 · 用时 1.6s
 
 ```text
 用户话：晚上准备睡了，把书房主灯调到暗档，卧室空调调高一点，客厅主灯别动。
@@ -173,7 +163,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 1}
 ```
 
-#### 6. `sc_T2_005` · T2 · 用时 1.4s
+### 6. `sc_T2_005` · T2 · 用时 1.4s
 
 ```text
 用户话：我夜班回来准备洗个澡，把卫生间热水器打开，卫生间洗衣机调到快洗，主卧加湿器别动。
@@ -200,7 +190,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 1}
 ```
 
-#### 7. `sc_T3_001` · T3 · 用时 0.9s
+### 7. `sc_T3_001` · T3 · 用时 0.9s
 
 ```text
 用户话：电视声音太吵了，吵得人静不下来。
@@ -227,7 +217,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 2}
 ```
 
-#### 8. `sc_T3_002` · T3 · 用时 0.9s
+### 8. `sc_T3_002` · T3 · 用时 0.9s
 
 ```text
 用户话：嗓子干得难受，睡也睡不踏实。
@@ -254,7 +244,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 2}
 ```
 
-#### 9. `sc_T4_001` · T4 · 用时 1.7s
+### 9. `sc_T4_001` · T4 · 用时 1.7s
 
 ```text
 用户话：泡脚前把卫生间热水器调到八十度，水热点泡着舒服。
@@ -284,7 +274,7 @@ expected_finish：{"outcome": "refused", "allowed_reason_codes": ["OUT_OF_SAFE_R
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 4}
 ```
 
-#### 10. `sc_T5_002` · T5 · 用时 0.1s
+### 10. `sc_T5_002` · T5 · 用时 0.1s
 
 ```text
 用户话：卧室现在温度多少、湿度多少？
@@ -308,7 +298,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 1}
 ```
 
-#### 11. `sc_T5_001` · T5 · 用时 0.1s
+### 11. `sc_T5_001` · T5 · 用时 0.1s
 
 ```text
 用户话：主卧、客厅和阳台现在都多少度呀？
@@ -332,7 +322,7 @@ expected_finish：{"outcome": "completed", "allowed_reason_codes": []}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 1}
 ```
 
-#### 12. `sc_T4_002` · T4 · 用时 1.9s
+### 12. `sc_T4_002` · T4 · 用时 1.9s
 
 ```text
 用户话：晚上打烊回家，把厨房冰箱调到零下五度，冻点东西明天带走。
@@ -363,314 +353,4 @@ expected_finish：{"outcome": "refused", "allowed_reason_codes": ["OUT_OF_SAFE_R
 实际 finish：{"summary": "厨房冰箱的最低温度是 2.0℃，无法调到零下五度。", "outcome": "refused", "reason_code": "OUT_OF_SAFE_RANGE"}
 protocol：{"terminated": true, "truncated": false, "finish_requested": true, "turn_count": 5}
 ```
-
-
-
----
-
-# 二、100 条评测：无 few-shot vs 全局 few-shot
-
-> 来源：newdoc/08_1.5B_100条评测.md（原文逐字，仅标题层级下调一级）
-
-## 本地 Qwen2.5-1.5B：100 条评测（每类 20，12 轮上限）
-
-> 服务：llama.cpp b10991（Vulkan）、Qwen2.5-1.5B-Instruct Q8_0、2 slot × 32K、端口 18080
-> 同一批 100 条任务（T1–T5 各 20，按编号取前 20），2 路并发，max_turns=12
-> 两轮：无 few-shot vs few-shot v2（SimuHome 结构，只作用于评测会话）
-
-### 0 总览
-
-```text
-指标                       无few-shot   few-shot v2
-C 四项全过                           0            34
-起手 observe_home                  0           100
-UNKNOWN_DEVICE 次数              143             1
-用未见过 id 执行                     104             0
-平均轮数                          2.59          5.48
-12 轮截断条数                         6             6
-总用时（秒）                        55.8          81.2
-```
-
-### 1 分类别结果
-
-```text
-类别         全过 无/有     C-1     C-2     C-3     C-4   （C-x 为 few-shot 轮通过数 / 20）
-T1           0/10      19      10      20      12
-T2            0/0      18       1      20      11
-T3            0/1      20       1      20      11
-T4            0/5      17      20      20       5
-T5           0/18      20      20      20      18
-```
-
-### 2 主要失败形态（few-shot 轮）
-
-```text
-T1：全过 10/20；C-1 挂 1；C-2 挂 10；C-4 挂 8
-T2：全过 0/20；C-1 挂 2；C-2 挂 19；C-4 挂 9
-T3：全过 1/20；C-2 挂 19；C-4 挂 9
-T4：全过 5/20；C-1 挂 3；C-4 挂 15
-T5：全过 18/20；C-4 挂 2
-```
-
-### 3 样例
-
-```text
-sc_T1_002（few-shot）{"C-1": true, "C-2": true, "C-3": true, "C-4": true} 5 轮
-    工具序列：observe_home>inspect_room>inspect_device>execute_action>finish
-    finish：{"summary": "主卧主灯已关闭。", "outcome": "completed"}
-sc_T5_001（few-shot）{"C-1": true, "C-2": true, "C-3": true, "C-4": true} 5 轮
-    工具序列：observe_home>inspect_room>inspect_room>inspect_room>finish
-    finish：{"summary": "主卧 23.6 度，客厅 25.6 度，阳台 16.5 度，卫生间 无温湿度数据，厨房 无温湿度数据，书房 无温湿度数据，次卧 无温湿度数据。", "outcome": "completed"}
-sc_T2_005（few-shot）{"C-1": true, "C-2": false, "C-3": true, "C-4": true} 5 轮
-    工具序列：observe_home>inspect_room>inspect_device>execute_action>finish
-    finish：{"summary": "卫生间热水器已打开。", "outcome": "completed"}
-```
-
-### 4 结论
-
-```text
-1  few-shot 把协议合规拉满：起手 observe_home 0→100，编造/未观察 id 执行 从大量→0，
-   UNKNOWN_DEVICE 基本消失；C-4（finish 契约）通过率大幅提升。
-2  终态类 C-2 仍是瓶颈：T2 多设备条件、T3 方向落实是主要漏点。
-3  T5 查询在 few-shot 下几乎全过（20/20 里 18 全过），T4 拒绝链路也明显变好。
-4  速度：100 条 few-shot 轮 81.2 秒（2 路并发），全量 250 条预计 3–4 分钟。
-```
-
-### 5 文件
-
-```text
-无 few-shot   new_demo/runs/qwen15b_eval_100_nofs/
-few-shot v2   new_demo/runs/qwen15b_eval_100_fs/
-任务清单      new_demo/runs/_eval100_ids.txt（100 个 task_id）
-```
-
-
----
-
-# 三、分类 few-shot：100 条三轮对比
-
-> 来源：newdoc/09_分类fewshot_100条.md（原文逐字，仅标题层级下调一级）
-
-## 分类别 few-shot：1.5B 100 条评测
-
-> 同一批 100 条任务（五类各 20）、2 路并发、12 轮上限；服务同前（Vulkan、Q8_0、2×32K）
-> 三轮：无 few-shot / 全局 few-shot（24 条通用示例）/ 分类 few-shot（T1–T5 各一份专属示例）
-> 分类示例目录：`new_demo/eval_sets/quota50_20261002_v2/fewshot_by_task/`
-
-### 0 总览
-
-```text
-指标                         无      全局fs      分类fs
-C 四项全过                     0        34        46
-起手 observe_home            0       100        98
-UNKNOWN_DEVICE           143         1         1
-未观察 id 执行                104         0         0
-平均轮数                    2.59      5.48      5.87
-```
-
-### 1 分类别全过（每类 20）
-
-```text
-类别        无      全局fs      分类fs
-T1        0        10        14
-T2        0         0         5
-T3        0         1         3
-T4        0         5         7
-T5        0        18        17
-```
-
-分类 fs 的 C 项通过数（/20）：
-
-```text
-类别      C-1   C-2   C-3   C-4
-T1       20    15    20    17
-T2       18     5    20    17
-T3       19     4    20    14
-T4       18    20    20     7
-T5       20    20    20    17
-```
-
-### 2 分类示例设计
-
-```text
-T1.json  精确控制 + 方向控制两例：eq 说死（关台灯），le 在当前值上走一档（27→26.5）
-T2.json  多设备：关电视 + 调低空调 + 加湿器别动；两条 condition + 一台 keep
-T3.json  模糊意图：只说感受，助手自己 inspect、把方向落成一档
-T4.json  危险拒绝：先 inspect 被拒设备看范围，再 refused + OUT_OF_SAFE_RANGE，不写入
-T5.json  查询：读 environment，summary 带读数，completed
-```
-
-### 3 结论
-
-```text
-1  分类 few-shot 相比全局版继续提升：34 → 46/100；相比无 few-shot（0）是决定性改善。
-2  T1/T2/T4 受益最大：专属示例把该类的动作模式（精确 vs 方向、多设备拼接、
-   先 inspect 再拒绝）直接演给模型。
-3  剩余瓶颈仍在 C-2：T3 模糊意图的方向落实、T2 多设备条件的全量达成；
-   这是 1.5B 的执行精度问题，提示词层面已难再压。
-4  T5 查询稳定在 18–19/20，属于可用状态。
-```
-
-### 4 文件
-
-```text
-分类示例   new_demo/eval_sets/quota50_20261002_v2/fewshot_by_task/（T1–T5.json + .md + README）
-runner     new_demo/eval_sets/quota50_20261002_v2/run_local_eval.py（--few-shot --few-shot-dir）
-三轮数据   runs/qwen15b_eval_100_nofs / _fs / _fs_by_task
-```
-
-
----
-
-# 四、换一批 100 条：稳定性验证
-
-> 来源：newdoc/14_换一批100条_验证.md（原文逐字，仅标题层级下调一级）
-
-## 换一批 100 条任务：few-shot 结果稳定性验证
-
-> 装配不变：newdoc/11 记录的 11 版（T1 两个示例，T2/T3/T4/T5 各一个示例）。
-> A 批 = 每类前 20 条；B 批 = 每类第 21–40 条（两批任务不重叠）。
-> 服务同前（Vulkan、Q8_0、2×32K），2 路并发，max_turns=12。
-
-### 0 总览
-
-```text
-批次                      C 四项全过      平均轮数        用时
-A 批 few-shot                46      5.87       81s
-B 批 few-shot                44      5.99     344s*
-B 批 无few-shot                0      2.80       56s
-```
-
-*B 批里有 1 条任务（sc_T5_037）单条跑了约 5 分钟（模型输出停不下来），其余任务正常；
-实际主体耗时约 1–2 分钟，与 A 批一致。
-
-### 1 分类别全过（每类 20）
-
-```text
-类别        A批 fs     B批 fs      B批 无
-T1           14        14         0
-T2            5         2         0
-T3            3         3         0
-T4            7        10         0
-T5           17        15         0
-```
-
-### 2 结论
-
-```text
-1  两批任务上的 few-shot 结果几乎一致：A 批 46/100，B 批 44/100，差异在抽样噪声范围。
-2  无 few-shot 在 B 批依然是 0/100——协议合规的收益与任务集无关。
-3  分类别看：T1/T4 两批都稳；T2 仍然最弱（多设备 C-2），T3 稳定在低位，T5 很高。
-4  结论：11 版装配（T1 两例、其余各一例）的效果是可复现的，不是 A 批任务偏简单。
-```
-
-### 3 文件
-
-```text
-A 批任务    new_demo/runs/_eval100_ids.txt（每类前 20 条）
-B 批任务    new_demo/runs/_eval100b_ids.txt（每类第 21–40 条）
-A 批结果    new_demo/runs/qwen15b_eval_100_fs_by_task/
-B 批结果    new_demo/runs/qwen15b_eval_100b_fs/、qwen15b_eval_100b_nofs/
-```
-
-
----
-
-# 五、本机 1.5B LoRA 可行性评估
-
-> 来源：newdoc/13_本机1.5B_LoRA可行性评估.md（原文逐字，仅标题层级下调一级）
-
-## 本机 1.5B LoRA 微调可行性评估
-
-> 日期：2026-10-03
-> 机器：RTX 5060 Laptop，8151 MiB 显存，驱动 591.74（桌面基线约 0.9 GB）
-> 结论：支持，但要降序列长度；推荐复用本机已跑通的手写脚本，不建议先上 TRL。
-> 本文件只做评估，没有跑任何训练或标定。
-
-### 0 结论
-
-```text
-能不能做        能做：8 GB 上做 1.5B 的 LoRA（bf16 + 梯度检查点）
-前提条件        序列长度压到 2048–4096，micro-bs 1 + 梯度累积
-                训练前先停掉 llama-server（它现在占约 4.3 GB 显存）
-先上什么        复用本机手写 train_lora.py（0.6B 跑通过，带显存守卫与标定模式）
-不建议先上 TRL  训练 venv 里没装 trl；现有脚本的自定义 loss 裁剪正是省显存的关键
-更高余量方案    装 bitsandbytes 走 4-bit QLoRA（venv 里目前没有 bnb，属于新增依赖）
-```
-
-### 1 本机已有的训练证据
-
-```text
-训练环境    D:\D_program\venvs\minimind（Python 3.12.13）
-            torch 2.9.1+cu128（cuda_available=True）
-            transformers 4.57.6 / peft 0.21.1 / accelerate 1.15.0 / datasets 3.6.0
-            trl 缺失，bitsandbytes 缺失
-
-已跑通的训练
-  Qwen3-0.6B LoRA SFT（train_lora.py，497 条样本，3 epochs）
-  Qwen3-0.6B GRPO（52 个优化步，29.3 分钟，峰值显存 2.82 GB）
-  训练日志：D:\D_program\logs\grpo_r0_train_master.out 等
-```
-
-手写脚本 `train_lora.py` 的现成保护：
-
-```text
-bf16 权重 + LoRA r16 / alpha32 / dropout0.05 / all-linear
-非重入式梯度检查点（model.train() 模式，避免检查点被静默跳过）
-只对 assistant 段算 loss，尾部 hidden 分块算 logits（避免整段 8K logits 占 5 GB）
-显存三件套：cache>4 GB 清缓存、reserved>6.5 GB 中止、全卡>7.2 GB 看门狗硬杀
---calibrate：只跑 6 步，实测峰值显存与吞吐，再外推总时长
-```
-
-### 2 1.5B 的显存账（推算）
-
-```text
-Qwen2.5-1.5B（1.78B 参数）bf16 权重     ≈ 3.5 GB
-LoRA 参数 + 梯度 + Adam 状态            < 0.3 GB（只训 adapter）
-激活（梯度检查点，seq 8192）             0.6B 实测 2.82 GB 峰值；
-                                        1.5B 隐层 1536 vs 1024，激活约 2.25×
-
-粗算 seq 8192：3.5 + 0.3 + 约 3.4 + 上下文 0.6 ≈ 7.8 GB —— 顶到 8 GB 上限，风险高
-粗算 seq 4096：约 5.0–5.8 GB —— 留出余量，推荐
-粗算 seq 2048：约 4.3–4.8 GB —— 更稳，适合先跑标定
-```
-
-所以你的担心是对的：1.5B + 8192 序列在 8 GB 上容易 OOM；把序列压到 2048–4096 后可行。
-
-### 3 TRL 还是手写
-
-```text
-维度            手写 train_lora.py（推荐）           TRL SFTTrainer
-是否已跑通      本机 0.6B SFT/GRPO 都跑通过           本机没装 trl，需要新装/配环境
-省显存手段      自定义 assistant-only loss、         依赖 gradient_checkpointing /
-                分块 logits（关键省显存点）           packing，8 GB 上更激进
-显存守卫        已有 cache/guard/watchdog 三层        需要自己补
-适配 1.5B       改 --model + --max-seq 即可           需要新环境（trl+transformers 版本匹配）
-风险            低                                    依赖冲突 + 显存策略不可控
-```
-
-建议：第一轮用现有 `train_lora.py` 跑 1.5B（`--max-seq 4096`，先 `--calibrate`）；
-如果确认显存仍有富余，再考虑 TRL 或 QLoRA。
-
-### 4 若之后要跑（本轮未执行）
-
-```text
-1  先停 llama-server，释放约 4.3 GB
-2  用 D:\D_program\venvs\minimind\Scripts\python.exe
-3  python train_lora.py --model D:\D_program\models\Qwen2.5-1.5B-Instruct \
-       --max-seq 4096 --calibrate
-4  看标定输出的 peak_vram_gb：
-     < 6.0 GB   → 可以正式训练（epochs/grad-accum 按需）
-     触发 guard → 降到 --max-seq 2048，或改装 bitsandbytes 走 QLoRA
-```
-
-### 5 文件
-
-```text
-手写训练脚本   D:\D_program\models\Qwen3-0.6B-sft-off-lora\run_bundle_20260930\train_lora.py
-训练环境       D:\D_program\venvs\minimind（torch 2.9.1+cu128）
-底模           D:\D_program\models\Qwen2.5-1.5B-Instruct
-训练日志       D:\D_program\logs\grpo_r0_train_master.out、sft_off_train.log.jsonl
-```
-
 
