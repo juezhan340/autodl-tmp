@@ -1,4 +1,4 @@
-"""A 的最小接口。V1 用脚本策略；D5 用 DeepSeekPolicy，role=A。"""
+"""A 的最小接口。V1 用脚本策略；D5 用 DeepSeekPolicy，role=A，不限 token。"""
 
 from __future__ import annotations
 
@@ -35,37 +35,54 @@ class ScriptPolicy:
 
 
 class DeepSeekPolicy:
-    """D5 里的 A。每轮看 context，role=A，不限 token。"""
+    """D5 里的 A。一场 episode 共用一份 messages，后面只 append。"""
 
     def __init__(self, client: DeepSeekClient) -> None:
-        """注入共用客户端。"""
+        """注入客户端，会话在第一轮重建。"""
         self.client = client
+        self._messages: list[dict[str, str]] = []
+        self._scenario_id: str | None = None
 
     def respond(self, context: dict[str, Any]) -> Any:
-        """把本轮观察填进固定 A 提示词，收回一个工具 JSON。"""
+        """第一轮发 system+用户话；之后只追加模型输出和 observation。"""
         observation = context.get("observation") or {}
-        values = {
-            "user_request": observation.get("user_request", ""),
-            "turn_index": context.get("turn_index"),
-            "max_turns": context.get("max_turns"),
-            "last_tool_result": observation.get("last_tool_result"),
-            "protocol_feedback": context.get("protocol_feedback"),
-            "tools": context.get("tools") or observation.get("tools"),
-            "history": context.get("history"),
-        }
-        prompt = build_a_prompt(values)
-        scenario_id = observation.get("scenario_id", "sc")
-        request_id = f"a_{scenario_id}_turn_{context.get('turn_index')}"
+        scenario_id = str(observation.get("scenario_id", "sc"))
+        turn_index = context.get("turn_index")
+        if turn_index == 1 or scenario_id != self._scenario_id:
+            self._start_episode(observation, context)
+        else:
+            self._append_observation(observation, context)
+        request_id = f"a_{scenario_id}_turn_{turn_index}"
         try:
             response = self.client.complete(
-                [{"role": "user", "content": prompt}],
+                copy_json(self._messages),
                 role="A",
                 request_id=request_id,
             )
         except Exception as exc:
             return f"A_POLICY_ERROR: {exc}"
+        self._messages.append({"role": "assistant", "content": response.content})
         try:
             parsed = _parse_json_object(response.content)
         except (ValueError, json.JSONDecodeError):
             return response.content
         return copy_json(parsed)
+
+    def _start_episode(self, observation: dict[str, Any], context: dict[str, Any]) -> None:
+        """建 system 和第一条 user，丢掉上一场的 messages。"""
+        tools = context.get("tools") or observation.get("tools") or []
+        system = build_a_prompt({"tools": tools})
+        user_request = str(observation.get("user_request", ""))
+        self._messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_request},
+        ]
+        self._scenario_id = str(observation.get("scenario_id", "sc"))
+
+    def _append_observation(self, observation: dict[str, Any], context: dict[str, Any]) -> None:
+        """把上一轮工具回执或协议错误追加成 user observation。"""
+        payload = context.get("protocol_feedback")
+        if payload is None:
+            payload = observation.get("last_tool_result")
+        text = "observation: " + json.dumps(payload, ensure_ascii=False)
+        self._messages.append({"role": "user", "content": text})

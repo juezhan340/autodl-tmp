@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from new_demo.agents.DeepSeek_client import DeepSeekClient
-from new_demo.data.D0_template import build_prompt, normalize_category
+from new_demo.data.D0_template import build_prompt, display_names_from_home, normalize_category, rooms_from_home
 from new_demo.env.B_models import copy_json
 
 
@@ -65,18 +65,26 @@ class DeepSeekInstructionReviewer:
         task: dict[str, Any],
         user_request: str,
         intent: str | None = None,
+        home: dict[str, Any] | None = None,
     ) -> ReviewResult:
-        """第一步程序，过了才调模型。"""
+        """第一步程序，过了才调模型。home 用来告诉模型本轮有哪些房间和设备。"""
         leak_codes = program_leak_codes(user_request, task)
         if leak_codes:
             return ReviewResult(False, leak_codes, stage="program")
         code = normalize_category(category)
         request_id = f"d3_review_{code}_{uuid.uuid4().hex[:8]}"
         used_intent = intent if intent is not None else str(task.get("intent", ""))
+        house = home or {}
         prompt = build_prompt(
             "review",
             code,
-            {"intent": used_intent, "task": task, "user_request": user_request},
+            {
+                "intent": used_intent,
+                "task": task,
+                "user_request": user_request,
+                "rooms": rooms_from_home(house),
+                "display_names": display_names_from_home(house),
+            },
         )
         _, parsed = self.client.complete_json(
             [{"role": "user", "content": prompt}],

@@ -29,7 +29,7 @@ B.step 四工具、finish 拒、越界、只读传感器、发现链不是闸门
 observation 无 task、无设备库存
 C.run 每轮 1 工具；两个工具不执行
 纯文本不补 outcome
-C-1..C-4：completed 全过、summary-only、拒绝、缺观察、截断
+C-1..C-4：completed 全过、summary-only、拒绝（C-2 不冻整屋）、keep 被破坏、缺观察、截断
 中间 UNKNOWN_DEVICE 后来改对仍可通过
 facts 进 finish 是形状错误，C-4 失败
 ```

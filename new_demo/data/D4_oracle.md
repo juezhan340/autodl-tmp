@@ -22,10 +22,11 @@
   new_demo/data/D4_oracle.py
 
 ```text
-eq     写成目标值，已经到位也照发
-ge/le  尚未成立则写成边界值；已经成立则跳过，避免把 22 度改成 26
+eq     写成目标值
+ge/le  按当前值加减一档；顶到 min/max 则失败
 T2     每条 condition 各打一次，keep 不打
 T4     probe 必须失败且 state 不变
-T5     inspect_device / inspect_room，不 execute
+T5     空观察过；若仍列出观察则 inspect，不 execute
 operator 只认 eq/ge/le
+主灯 mode 走 set_mode；台灯 level 走 set_percentage
 ```

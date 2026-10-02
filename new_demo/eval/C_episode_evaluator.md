@@ -11,7 +11,7 @@
 
 读取：
   task.conditions / keep / required_observations / expected_finish
-  s0 的初始 state（拒绝任务要比有没有被改）
+  scenario.home 的初值，供 ge/le 比较
 
 写入：
   无。不覆盖五项记录。
@@ -24,10 +24,8 @@
 
 ```text
 C-1  有 finish、未 truncated、每轮没有超过 1 个工具
-     只有 summary 仍算有 finish
-C-2  conditions/keep 全过，空数组过
-     refused 还要终态等于 s0
+C-2  eq 比 value；ge 终态 > s0；le 终态 < s0
+     keep 仍只 eq；空数组过；不冻整屋
 C-3  required_observations 都成功 inspect 过，空数组过
 C-4  outcome 对齐；refused 的 reason_code 落在允许集
-     查询也是 completed；facts 或缺少 outcome -> 失败
 ```

@@ -50,7 +50,10 @@ def check_blueprint(
     conditions = task.get("conditions") or []
     if conditions:
         return _check_writes(env, conditions)
-    return _check_inspects(env, task.get("required_observations") or [])
+    required = task.get("required_observations") or []
+    if not required:
+        return OracleResult(True)
+    return _check_inspects(env, required)
 
 
 def _static_ids(
@@ -78,13 +81,11 @@ def _static_ids(
 
 
 def _check_writes(env: HomeEnv, conditions: list[dict[str, Any]]) -> OracleResult:
-    """每条 condition 必要时打一次 execute_action；ge/le 已成立则不写。"""
+    """每条 condition 打一次写入。ge/le 沿方向挪一档，不能挪则失败。"""
     for index, condition in enumerate(conditions):
-        call = _call_from_condition(condition, env.runtime_state)
+        call = _call_from_condition(condition, env)
         if isinstance(call, OracleResult):
             return call
-        if call is None:
-            continue
         result = env.step(call)
         if not result.event.ok:
             code = result.event.error_code or "BAD_REQUEST"
@@ -118,9 +119,9 @@ def _check_refusal(
 
 
 def _check_inspects(env: HomeEnv, required: list[dict[str, Any]]) -> OracleResult:
-    """T5：不 execute，只 inspect；缺 field 则不合格。"""
+    """T5 若仍列出观察则只 inspect，不 execute。"""
     if not required:
-        return OracleResult(False, "BAD_REQUEST", "query task needs required_observations")
+        return OracleResult(True)
     for index, item in enumerate(required):
         kind = item.get("kind")
         if kind == "device":
@@ -144,25 +145,30 @@ def _check_inspects(env: HomeEnv, required: list[dict[str, Any]]) -> OracleResul
     return OracleResult(True)
 
 
-def _call_from_condition(condition: dict[str, Any], runtime_state: dict[str, Any]) -> ToolCall | OracleResult | None:
-    """按 eq/ge/le 译成写入；已满足的 ge/le 返回 None 表示跳过。"""
+def _call_from_condition(condition: dict[str, Any], env: HomeEnv) -> ToolCall | OracleResult:
+    """eq 写成目标值；ge/le 按当前值加减一档。"""
     device_id = condition.get("device_id")
     field = condition.get("field")
     operator = condition.get("operator", "eq")
     value = condition.get("value", condition.get("equals"))
     if operator not in WRITE_OPERATORS:
         return OracleResult(False, "BAD_REQUEST", f"unsupported write operator: {operator}")
-    actual = (runtime_state.get(device_id) or {}).get("state", {}).get(field)
-    if operator in {"ge", "le"} and _compare(actual, operator, value):
-        return None
-    write_value = _write_value(actual, operator, value)
+    actual = (env.runtime_state.get(device_id) or {}).get("state", {}).get(field)
     if field == "on":
         if operator != "eq":
             return OracleResult(False, "BAD_REQUEST", "on condition only supports operator=eq")
-        action = "turn_on" if write_value is True else "turn_off" if write_value is False else None
+        action = "turn_on" if value is True else "turn_off" if value is False else None
         if action is None:
             return OracleResult(False, "BAD_REQUEST", "on condition value must be boolean")
         return ToolCall("execute_action", {"device_id": device_id, "action": action, "params": {}}, "d4_write")
+    if operator in {"ge", "le"}:
+        if field not in {"target", "level"}:
+            return OracleResult(False, "BAD_REQUEST", "ge/le only supports target or level")
+        write_value = _nudge_value(env, str(device_id), str(field), operator, actual)
+        if write_value is None:
+            return OracleResult(False, "BAD_REQUEST", f"cannot move {field} {operator} from {actual}")
+    else:
+        write_value = value
     mapped = FIELD_ACTIONS.get(field)
     if not mapped:
         return OracleResult(False, "BAD_REQUEST", f"no action mapping for field: {field}")
@@ -174,25 +180,47 @@ def _call_from_condition(condition: dict[str, Any], runtime_state: dict[str, Any
     )
 
 
-def _write_value(actual: Any, operator: str, value: Any) -> Any:
-    """eq 写成目标值；ge/le 尚未成立时写成边界值。"""
-    if operator == "eq":
-        return value
-    return value
-
-
-def _compare(actual: Any, operator: str, expected: Any) -> bool:
-    """与 C-2 同一套比较，供 D4 判断 ge/le 是否已成立。"""
+def _nudge_value(env: HomeEnv, device_id: str, field: str, operator: str, actual: Any) -> Any | None:
+    """沿方向写一档；顶到 min/max 就无法再动。"""
     try:
-        if operator == "eq":
-            return actual == expected
-        if operator == "ge":
-            return actual >= expected
-        if operator == "le":
-            return actual <= expected
+        current = float(actual)
     except (TypeError, ValueError):
-        return False
-    return False
+        return None
+    minimum, maximum, step = _field_range(env, device_id, field)
+    if step is None:
+        step = 1.0 if field == "level" else 0.5
+    if operator == "ge":
+        nxt = current + float(step)
+        if maximum is not None and nxt > float(maximum) + 1e-9:
+            return None
+    elif operator == "le":
+        nxt = current - float(step)
+        if minimum is not None and nxt < float(minimum) - 1e-9:
+            return None
+    else:
+        return None
+    if isinstance(actual, int) and not isinstance(actual, bool) and abs(nxt - round(nxt)) < 1e-9:
+        return int(round(nxt))
+    return nxt
+
+
+def _field_range(env: HomeEnv, device_id: str, field: str) -> tuple[float | None, float | None, float | None]:
+    """从设备 actions 读 min/max/step。"""
+    mapped = FIELD_ACTIONS.get(field)
+    if not mapped:
+        return None, None, None
+    action_name, param = mapped
+    device = env.scenario.home.devices.get(device_id)
+    if device is None:
+        return None, None, None
+    for action in device.actions:
+        if action.action != action_name:
+            continue
+        spec = action.params.get(param)
+        if spec is None:
+            return None, None, None
+        return spec.minimum, spec.maximum, spec.step
+    return None, None, None
 
 
 def _probe_scenario(home: dict[str, Any]) -> dict[str, Any]:

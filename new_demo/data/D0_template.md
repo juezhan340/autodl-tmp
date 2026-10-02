@@ -1,10 +1,10 @@
 # D0_template.py
 
 职责：
-  读提示词文件，只填本轮材料。task/D6 按 T；request/review 共用一份。
+  读提示词文件，只填本轮材料。task / request / review / D6 都按 T 分文件。
 
 输入：
-  kind = task / request / review
+  kind = task / request / review / d6
   category = T1 或 single_control
   values = 这一轮的 dict
 
@@ -19,7 +19,7 @@
   无。
 
 不负责：
-  调模型。request/review 已是全文，不再按 T 拆文件。
+  调模型。
 
 对应文件：
   new_demo/data/D0_template.py

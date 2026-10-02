@@ -379,7 +379,7 @@ def test_too_many_tool_calls_does_not_execute() -> None:
 
 
 def test_refused_unchanged_and_reason_code() -> None:
-    """拒绝：state 相对 s0 未改，reason_code 要落在允许集。"""
+    """拒绝：C-2 只认 keep（空则过）；reason_code 要落在允许集。"""
     scenario = _scenario(
         user_request="把空调打到五度",
         task={
@@ -442,7 +442,70 @@ def test_refused_unchanged_and_reason_code() -> None:
         ],
         scenario,
     )
-    assert mutated.labels.to_dict()["C-2"] is False
+    # keep 为空时，拒绝任务改了其它设备，C-2 仍过；谎称写入交给 D6
+    assert mutated.labels.to_dict()["C-2"] is True
+    assert mutated.labels.to_dict()["C-4"] is True
+
+
+def test_keep_broken_fails_c2() -> None:
+    """T2 keep 被破坏时 C-2 失败。"""
+    scenario = _scenario(
+        user_request="把空调调到二十四度，客厅灯别动",
+        task={
+            "intent": "卧室空调调到二十四度，客厅灯保持开着",
+            "conditions": [
+                {
+                    "device_id": "device_bedroom_climate",
+                    "field": "target",
+                    "operator": "eq",
+                    "value": 24.0,
+                }
+            ],
+            "keep": [
+                {"device_id": "device_living_light", "field": "on", "operator": "eq", "value": True}
+            ],
+            "required_observations": [],
+            "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+        },
+    )
+    broken = _run(
+        [
+            _call(
+                "execute_action",
+                {
+                    "device_id": "device_bedroom_climate",
+                    "action": "set_temperature",
+                    "params": {"value": 24.0},
+                },
+            ),
+            _call(
+                "execute_action",
+                {
+                    "device_id": "device_living_light",
+                    "action": "turn_off",
+                    "params": {},
+                },
+            ),
+            _call("finish", {"summary": "空调好了", "outcome": "completed"}),
+        ],
+        scenario,
+    )
+    assert broken.labels.to_dict()["C-2"] is False
+    kept = _run(
+        [
+            _call(
+                "execute_action",
+                {
+                    "device_id": "device_bedroom_climate",
+                    "action": "set_temperature",
+                    "params": {"value": 24.0},
+                },
+            ),
+            _call("finish", {"summary": "空调二十四度，客厅灯没动。", "outcome": "completed"}),
+        ],
+        scenario,
+    )
+    assert kept.labels.to_dict()["C-2"] is True
 
 
 def test_c3_requires_inspect_device() -> None:
@@ -617,23 +680,32 @@ def test_fridge_refusal_bad_request_then_out_of_safe_range() -> None:
     assert run.labels.to_dict() == {"C-1": True, "C-2": True, "C-3": True, "C-4": True}
 
 
-def test_old_dataset_still_validates() -> None:
-    """闸 2 五条 frozen home 仍能 B.reset。"""
-    from pathlib import Path
-    import json
-
+def test_catalog_home_validates() -> None:
+    """当前目录抽出来的 s0 能过 B 校验（加湿器已无 level）。"""
+    from new_demo.data.D1_home_maker import make_home
     from new_demo.env.B_schema import ensure_valid_scenario
 
-    path = Path(__file__).resolve().parents[1] / "data_processed" / "D_dataset.jsonl"
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        row = json.loads(line)
-        ensure_valid_scenario(row["scenario"])
+    home = make_home(20260930)
+    ensure_valid_scenario(
+        {
+            "scenario_id": "sc_cat",
+            "blueprint_id": "bp_cat",
+            "home": home,
+            "user_request": "dummy",
+            "task": {
+                "intent": "x",
+                "conditions": [],
+                "keep": [],
+                "required_observations": [],
+                "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+            },
+            "episode_config": {"max_turns": 10, "max_tool_calls_per_turn": 1},
+        }
+    )
 
 
 def test_c2_accepts_le_temperature() -> None:
-    """T3 le 26：写成 24 过，停在 27 不过。"""
+    """le：比初值低过，原地不动不过。"""
     home = _home()
     home["devices"][1]["state"]["target"] = 27.0
     scenario = _scenario(
@@ -641,7 +713,7 @@ def test_c2_accepts_le_temperature() -> None:
         user_request="凉快一点",
         task={
             "intent": "想凉快一点",
-            "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 26.0}],
+            "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 27.0}],
             "keep": [],
             "required_observations": [],
             "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},

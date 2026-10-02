@@ -50,23 +50,23 @@ def test_task_writer_uses_t1_file_and_external_role() -> None:
     assert "李梅" in client.last_content
 
 
-def test_request_writer_uses_preassembled_t2_file() -> None:
-    """写用户话走共用的 D0_request.md。"""
-    client = FakeClient(text="孩子要睡了，灯关了，空调二十四度，客厅灯别动。")
+def test_request_writer_uses_t2_file() -> None:
+    """写用户话走 D0_request_T2.md。"""
+    client = FakeClient(text="睡觉前把客厅电视关掉，卧室空调调低一点，厨房冰箱别动。")
     task = {
-        "intent": "睡前",
+        "intent": "睡觉前想凉一点，客厅电视关掉，卧室空调调低一点，厨房冰箱别动",
         "conditions": [
-            {"device_id": "device_bedroom_light", "field": "on", "operator": "eq", "value": False},
-            {"device_id": "device_bedroom_climate", "field": "target", "operator": "eq", "value": 24.0},
+            {"device_id": "device_living_tv", "field": "on", "operator": "eq", "value": False},
+            {"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 26.0},
         ],
-        "keep": [{"device_id": "device_living_light", "field": "on", "operator": "eq", "value": True}],
+        "keep": [{"device_id": "device_kitchen_fridge", "field": "target", "operator": "eq", "value": 4.0}],
         "required_observations": [],
         "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
     }
     result = DeepSeekRequestWriter(client).write(category="T2", task=task, home=_home())
-    assert result.user_request.startswith("孩子要睡了")
-    assert "T2：一条话里覆盖全部 condition" in client.last_content
-    assert "T1：点明那一台设备" in client.last_content
+    assert result.user_request.startswith("睡觉前")
+    assert "conditions 有几条，话里就要有几处" in client.last_content
+    assert "这一条 condition 的必要信息必须在话里" not in client.last_content
 
 
 def test_reviewer_program_leak_skips_model() -> None:
@@ -85,7 +85,7 @@ def test_reviewer_program_leak_skips_model() -> None:
 
 
 def test_reviewer_uses_t5_file() -> None:
-    """语义审查走共用的 D3_review.md。"""
+    """语义审查走 D3_review_T5.md。"""
     client = FakeClient(payload={"accept": True, "codes": []})
     result = DeepSeekInstructionReviewer(client).review(
         category="T5",
@@ -93,12 +93,98 @@ def test_reviewer_uses_t5_file() -> None:
             "intent": "想知道湿不湿",
             "conditions": [],
             "keep": [],
-            "required_observations": [{"kind": "device", "device_id": "sensor_bedroom_env"}],
+            "required_observations": [],
             "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
         },
         user_request="卧室现在湿不湿、热不热？",
         intent="想知道湿不湿",
     )
     assert result.accept is True
-    assert "只问状态" in client.last_content
-    assert "必须能听出那一台设备" in client.last_content
+    assert "必要信息是问状态" in client.last_content
+    assert "必须听得出那一台设备和精确目标" not in client.last_content
+
+
+def test_task_writer_allows_t1_le() -> None:
+    """T1 现在允许 ge/le。"""
+    client = FakeClient(
+        payload={
+            "intent": "进门还是热，想把卧室空调调低一点",
+            "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 25.0}],
+            "keep": [],
+            "required_observations": [],
+            "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+        }
+    )
+    result = DeepSeekTaskWriter(client).write(s0=_home(), persona={"name": "周凯"}, category="T1")
+    assert result.error_code is None
+    assert result.task["conditions"][0]["operator"] == "le"
+
+
+def test_task_writer_rejects_t1_observations() -> None:
+    """T1 带 required_observations 不合格。"""
+    client = FakeClient(
+        payload={
+            "intent": "关灯",
+            "conditions": [{"device_id": "device_bedroom_light", "field": "on", "operator": "eq", "value": False}],
+            "keep": [],
+            "required_observations": [{"kind": "device", "device_id": "device_bedroom_light"}],
+            "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+        }
+    )
+    result = DeepSeekTaskWriter(client).write(s0=_home(), persona={"name": "李梅"}, category="T1")
+    assert result.error_code == "INVALID_TASK_JSON"
+    assert "required_observations" in (result.error_message or "")
+
+
+
+
+
+
+def test_task_writer_rejects_t3_already_true() -> None:
+    """已经在下限时，T3 不能再写 le。"""
+    home = _home()
+    home["devices"][1]["state"]["target"] = 7.0
+    client = FakeClient(
+        payload={
+            "intent": "屋里像蒸笼",
+            "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 7.0}],
+            "keep": [],
+            "required_observations": [],
+            "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+        }
+    )
+    result = DeepSeekTaskWriter(client).write(s0=home, persona={"name": "陈浩"}, category="T3")
+    assert result.error_code == "INVALID_TASK_JSON"
+    assert "already holds" in (result.error_message or "")
+
+
+def test_task_writer_allows_t3_le_when_can_decrease() -> None:
+    """当前 25 还能再降，T3 le 合格。"""
+    client = FakeClient(
+        payload={
+            "intent": "屋里像蒸笼",
+            "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 25.0}],
+            "keep": [],
+            "required_observations": [],
+            "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+        }
+    )
+    result = DeepSeekTaskWriter(client).write(s0=_home(), persona={"name": "陈浩"}, category="T3")
+    assert result.error_code is None
+
+
+def test_task_writer_rejects_ge_value_not_s0() -> None:
+    """ge/le 的 value 必须等于 s0 当前值。"""
+    client = FakeClient(
+        payload={
+            "intent": "进门还是热，想把卧室空调调低一点",
+            "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 26.0}],
+            "keep": [],
+            "required_observations": [],
+            "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+        }
+    )
+    result = DeepSeekTaskWriter(client).write(s0=_home(), persona={"name": "周凯"}, category="T1")
+    assert result.error_code == "INVALID_TASK_JSON"
+    assert "s0 current value" in (result.error_message or "")
+

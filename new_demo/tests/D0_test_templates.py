@@ -14,10 +14,11 @@ from new_demo.data.D0_template import (
 from new_demo.data.D3_reviewer import program_leak_codes
 
 
-def test_personas_are_twenty() -> None:
-    """画像二十条，四字段，不含 sex/env_pref。"""
+def test_personas_are_twenty_five() -> None:
+    """画像二十五条，四字段，不含 sex/env_pref。"""
     rows = load_personas()
-    assert len(rows) == 20
+    assert len(rows) == 25
+    assert rows[-1]["persona_id"] == "p25"
     assert rows[0]["persona_id"] == "p01"
     assert "occupation" in rows[0]
     assert "habits" in rows[0]
@@ -25,26 +26,38 @@ def test_personas_are_twenty() -> None:
     assert "env_pref" not in rows[0]
 
 
-def test_request_and_review_are_shared_files() -> None:
-    """D2-2 和 D3 各一份全文，不按 T 拆。"""
+def test_request_and_review_are_split_by_t() -> None:
+    """D2-2 和 D3 按 T 分文件，T1 不管 T2 的拼接规则。"""
     t1 = load_template("request", "T1")
     t2 = load_template("request", "multi_control")
-    assert t1 == t2
-    assert "T1：点明那一台设备" in t1
-    assert "T3：可以不点设备名" in t1
+    t4 = load_template("request", "T4")
+    assert t1 != t2
+    assert "这一条 condition 的必要信息必须在话里" in t1
+    assert "conditions 有几条，话里就要有几处" in t2
+    assert "把卧室空调调到三度" in t4
     r1 = load_template("review", "T1")
     r5 = load_template("review", "T5")
-    assert r1 == r5
-    assert "T3：可以不点设备" in r1
-    assert "只问状态" in r1
+    assert r1 != r5
+    assert "调低一点" in r1
+    assert "必要信息是问状态" in r5
     assert "{{user_request}}" in r1
 
 
 def test_t3_task_allows_ge_le() -> None:
-    """T3 任务模板写明 eq/ge/le，例子是 le。"""
+    """T3 三种 operator，le/ge 相对初值。"""
     text = load_template("task", "vague_intent")
-    assert "operator 只许 eq、ge、le" in text
+    assert "operator 只有三种" in text
+    assert "比现在高" in text and "比现在低" in text
     assert '"operator":"le"' in text
+    assert "身上发潮" in text
+
+
+def test_t1_task_allows_range_and_empty_obs() -> None:
+    """T1 准许 eq/ge/le，required_observations 必须空。"""
+    text = load_template("task", "T1")
+    assert "operator 只有三种" in text
+    assert "required_observations 必须是空数组" in text
+    assert "主灯用 on 或 mode" in text
 
 
 def test_runtime_only_fills_placeholders() -> None:

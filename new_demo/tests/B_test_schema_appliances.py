@@ -1,4 +1,4 @@
-"""家电目录与设备自报校验：烤箱、冰箱、可调光灯、禁止的动作名。"""
+"""家电目录与设备自报校验：烤箱、冰箱、主灯两档、台灯百分比、禁止的动作名。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _kitchen_home() -> dict[str, Any]:
     return {
         "rooms": [
             {"room_id": "room_kitchen", "display_name": "厨房", "device_ids": ["device_kitchen_oven", "device_kitchen_fridge"]},
-            {"room_id": "room_bedroom", "display_name": "卧室", "device_ids": ["device_bedroom_night_light", "device_bedroom_light"]},
+            {"room_id": "room_bedroom", "display_name": "卧室", "device_ids": ["device_bedroom_night_light", "device_bedroom_light", "device_bedroom_lamp"]},
         ],
         "devices": [
             {
@@ -86,6 +86,23 @@ def _kitchen_home() -> dict[str, Any]:
                 "device_id": "device_bedroom_light",
                 "room_id": "room_bedroom",
                 "display_name": "卧室主灯",
+                "kind": "actuator",
+                "device_type": "light",
+                "state": {"on": True, "mode": "bright"},
+                "actions": [
+                    {"action": "turn_on", "params": {}},
+                    {"action": "turn_off", "params": {}},
+                    {
+                        "action": "set_mode",
+                        "params": {"mode": {"type": "string", "enum": ["dim", "bright"]}},
+                    },
+                ],
+                "available": True,
+            },
+            {
+                "device_id": "device_bedroom_lamp",
+                "room_id": "room_bedroom",
+                "display_name": "卧室台灯",
                 "kind": "actuator",
                 "device_type": "light",
                 "state": {"on": True, "level": 80},
@@ -220,19 +237,54 @@ def test_unknown_action_volume_and_night_light_dim() -> None:
     assert dim.event.error_code == "UNSUPPORTED_ACTION"
 
 
-def test_dimmable_light_set_percentage() -> None:
-    """主灯可以 set_percentage。"""
+def test_desk_lamp_set_percentage() -> None:
+    """台灯可以 set_percentage。"""
     env = HomeEnv()
     env.reset(_wrap(_kitchen_home()))
     result = env.step(
         ToolCall(
             "execute_action",
-            {"device_id": "device_bedroom_light", "action": "set_percentage", "params": {"value": 30}},
+            {"device_id": "device_bedroom_lamp", "action": "set_percentage", "params": {"value": 30}},
             "t1",
         )
     )
     assert result.event.ok is True
     assert result.event.result["data"]["state_after"]["level"] == 30
+
+
+def test_ceiling_light_set_mode() -> None:
+    """主灯用 set_mode dim，不能 set_percentage。"""
+    env = HomeEnv()
+    env.reset(_wrap(_kitchen_home()))
+    ok = env.step(
+        ToolCall(
+            "execute_action",
+            {"device_id": "device_bedroom_light", "action": "set_mode", "params": {"mode": "dim"}},
+            "t1",
+        )
+    )
+    assert ok.event.ok is True
+    assert ok.event.result["data"]["state_after"]["mode"] == "dim"
+    bad = env.step(
+        ToolCall(
+            "execute_action",
+            {"device_id": "device_bedroom_light", "action": "set_percentage", "params": {"value": 20}},
+            "t2",
+        )
+    )
+    assert bad.event.ok is False
+    assert bad.event.error_code == "UNSUPPORTED_ACTION"
+
+
+def test_light_cannot_combine_mode_and_level() -> None:
+    """同一盏灯不能同时公开档位和百分比。"""
+    home = _kitchen_home()
+    home["devices"][3]["state"]["level"] = 80
+    home["devices"][3]["actions"].append(
+        {"action": "set_percentage", "params": {"value": {"type": "integer", "minimum": 0, "maximum": 100, "step": 1}}}
+    )
+    errors = validate_scenario_dict(_wrap(home))
+    assert any("cannot combine" in item for item in errors)
 
 
 def test_oven_out_of_range_is_bad_request() -> None:

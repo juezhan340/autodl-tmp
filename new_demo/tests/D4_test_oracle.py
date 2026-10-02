@@ -61,13 +61,26 @@ def test_t4_probe_must_fail_and_not_mutate() -> None:
 
 
 def test_t5_inspect_sensor() -> None:
-    """T5 inspect 传感器，不 execute。"""
+    """T5 若仍列出观察则 inspect，不 execute。"""
     home = _home()
     task = {
         "intent": "湿度",
         "conditions": [],
         "keep": [],
         "required_observations": [{"kind": "device", "device_id": "sensor_bedroom_env"}],
+        "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+    }
+    assert check_blueprint(home, task).ok is True
+
+
+def test_t5_empty_observations_passes() -> None:
+    """T5 空观察只要 home 能 reset 就算过。"""
+    home = _home()
+    task = {
+        "intent": "湿度",
+        "conditions": [],
+        "keep": [],
+        "required_observations": [],
         "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
     }
     assert check_blueprint(home, task).ok is True
@@ -183,44 +196,54 @@ def test_fridge_probe_must_fail() -> None:
     assert check_blueprint(home, task, legal).ok is False
 
 
-def test_t3_le_writes_bound_when_too_hot() -> None:
-    """当前 27，le 26，D4 写入 26。"""
-    from new_demo.data.D4_oracle import _call_from_condition
+def test_t3_le_nudges_one_step() -> None:
+    """当前 27，le 按初值降一档，写入 26.5。"""
+    from new_demo.data.D4_oracle import _call_from_condition, _probe_scenario
+    from new_demo.env.B_home_env import HomeEnv
 
     home = _home()
     home["devices"][1]["state"]["target"] = 27.0
     task = {
         "intent": "凉快一点",
-        "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 26.0}],
+        "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 27.0}],
         "keep": [],
         "required_observations": [],
         "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
     }
     assert check_blueprint(home, task).ok is True
-    call = _call_from_condition(
-        task["conditions"][0],
-        {"device_bedroom_climate": {"state": {"target": 27.0}}},
-    )
-    assert call is not None
-    assert call.arguments["params"]["value"] == 26.0
+    env = HomeEnv()
+    env.reset(_probe_scenario(home))
+    call = _call_from_condition(task["conditions"][0], env)
+    assert call.arguments["params"]["value"] == 26.5
 
 
-def test_t3_le_skips_write_when_already_cool() -> None:
-    """当前 22，le 26，已经成立，不再写成 26。"""
-    from new_demo.data.D4_oracle import _call_from_condition
-
+def test_t3_le_fails_at_minimum() -> None:
+    """已经在下限，le 无法再降，D4 失败。"""
     home = _home()
-    home["devices"][1]["state"]["target"] = 22.0
+    home["devices"][1]["state"]["target"] = 7.0
     task = {
         "intent": "凉快一点",
-        "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 26.0}],
+        "conditions": [{"device_id": "device_bedroom_climate", "field": "target", "operator": "le", "value": 7.0}],
+        "keep": [],
+        "required_observations": [],
+        "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+    }
+    assert check_blueprint(home, task).ok is False
+
+
+def test_ceiling_light_mode_write() -> None:
+    """主灯 mode eq dim 走 set_mode。"""
+    home = _home()
+    home["devices"][0]["state"] = {"on": True, "mode": "bright"}
+    home["devices"][0]["actions"].append(
+        {"action": "set_mode", "params": {"mode": {"type": "string", "enum": ["dim", "bright"]}}}
+    )
+    task = {
+        "intent": "调到暗档",
+        "conditions": [{"device_id": "device_bedroom_light", "field": "mode", "operator": "eq", "value": "dim"}],
         "keep": [],
         "required_observations": [],
         "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
     }
     assert check_blueprint(home, task).ok is True
-    call = _call_from_condition(
-        task["conditions"][0],
-        {"device_bedroom_climate": {"state": {"target": 22.0}}},
-    )
-    assert call is None
+

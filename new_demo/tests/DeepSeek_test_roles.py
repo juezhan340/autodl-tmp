@@ -31,3 +31,47 @@ def test_neither_role_sends_max_tokens(tmp_path: Path) -> None:
     assert client.payloads[0]["model"]
     assert "max_tokens" not in client.payloads[0]
     assert "max_tokens" not in client.payloads[1]
+
+
+def test_a_policy_appends_messages(tmp_path: Path) -> None:
+    """第一轮 system+user；第二轮只追加 observation，不重贴规则。"""
+    from new_demo.agents.A_policy import DeepSeekPolicy
+
+    env = tmp_path / ".env.deepseek"
+    env.write_text("DEEPSEEK_API_KEY=test-key\nDEEPSEEK_MODEL=deepseek-chat\n", encoding="utf-8")
+    client = SpyClient(env)
+    policy = DeepSeekPolicy(client)
+    tools = [{"name": "observe_home", "description": "x", "parameters": {"type": "object", "properties": {}}}]
+    first = policy.respond(
+        {
+            "turn_index": 1,
+            "tools": tools,
+            "observation": {
+                "scenario_id": "sc_x",
+                "user_request": "把主灯调暗",
+                "last_tool_result": None,
+            },
+        }
+    )
+    assert first == {}
+    assert client.payloads[0]["messages"][0]["role"] == "system"
+    assert client.payloads[0]["messages"][1]["role"] == "user"
+    assert client.payloads[0]["messages"][1]["content"] == "把主灯调暗"
+    assert "你是智能家居助手" in client.payloads[0]["messages"][0]["content"]
+    policy.respond(
+        {
+            "turn_index": 2,
+            "tools": tools,
+            "observation": {
+                "scenario_id": "sc_x",
+                "user_request": "把主灯调暗",
+                "last_tool_result": {"ok": True, "data": {"rooms": []}},
+            },
+        }
+    )
+    second = client.payloads[1]["messages"]
+    assert second[0]["role"] == "system"
+    assert second[1]["content"] == "把主灯调暗"
+    assert second[-1]["role"] == "user"
+    assert second[-1]["content"].startswith("observation:")
+    assert second.count({"role": "system", "content": second[0]["content"]}) == 1

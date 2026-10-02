@@ -36,9 +36,14 @@ def test_catalog_counts() -> None:
     assert Counter(item["size"] for item in homes) == {"small": 5, "medium": 5, "large": 5}
     assert len(devices) == 21
     assert all(item["catalog_id"] != "cat_heater_switch" for item in devices)
-    dimmable = [item for item in devices if item["catalog_id"] in {"cat_ceiling_light", "cat_desk_lamp"}]
-    assert len(dimmable) == 2
-    assert all(any(action.get("action") == "set_percentage" for action in item["actions"]) for item in dimmable)
+    ceiling = next(item for item in devices if item["catalog_id"] == "cat_ceiling_light")
+    desk = next(item for item in devices if item["catalog_id"] == "cat_desk_lamp")
+    assert "level" not in ceiling["state"]
+    assert ceiling["state"]["mode"] in {"dim", "bright"}
+    assert any(action.get("action") == "set_mode" for action in ceiling["actions"])
+    assert not any(action.get("action") == "set_percentage" for action in ceiling["actions"])
+    assert "level" in desk["state"]
+    assert any(action.get("action") == "set_percentage" for action in desk["actions"])
     night = next(item for item in devices if item["catalog_id"] == "cat_night_light")
     assert not any(action.get("action") == "set_percentage" for action in night["actions"])
     assert {item["size"] for item in homes} == {"small", "medium", "large"}
@@ -116,10 +121,18 @@ def test_new_appliances_respect_rooms_and_ranges() -> None:
                 assert 7.0 <= device["state"]["target"] <= 32.0
             if "night_light" in device["device_id"]:
                 assert "level" not in device["state"]
-            if device["device_type"] == "light" and any(
-                action.get("action") == "set_percentage" for action in device["actions"]
-            ):
-                assert 0 <= device["state"]["level"] <= 100
+            if device["device_type"] == "light":
+                names = {action.get("action") for action in device["actions"]}
+                if "set_mode" in names:
+                    assert "level" not in device["state"]
+                    assert device["state"]["mode"] in {"dim", "bright"}
+                    assert "set_percentage" not in names
+                elif "set_percentage" in names:
+                    assert 0 <= device["state"]["level"] <= 100
+                    assert "mode" not in device["state"]
+                else:
+                    assert "level" not in device["state"]
+                    assert "mode" not in device["state"]
     kitchen_homes = 0
     for seed in range(30):
         home = make_home(seed)

@@ -34,7 +34,7 @@ ALLOWED_STATE_FIELDS = {
     "humidity_sensor": {"humidity"},
     "environment_sensor": {"temperature", "humidity"},
     "climate": {"on", "mode", "target"},
-    "light": {"on", "level"},
+    "light": {"on", "level", "mode"},
     "switch": {"on"},
     "fan": {"on", "level"},
     "tv": {"on", "mode", "level"},
@@ -43,7 +43,7 @@ ALLOWED_STATE_FIELDS = {
     "dishwasher": {"on", "mode"},
     "oven": {"on", "mode", "target"},
     "refrigerator": {"on", "target"},
-    "humidifier": {"on", "level"},
+    "humidifier": {"on"},
 }
 REQUIRED_STATE_FIELDS = {
     "temperature_sensor": {"temperature"},
@@ -59,7 +59,7 @@ REQUIRED_STATE_FIELDS = {
     "dishwasher": {"on", "mode"},
     "oven": {"on", "mode", "target"},
     "refrigerator": {"on", "target"},
-    "humidifier": {"on", "level"},
+    "humidifier": {"on"},
 }
 
 
@@ -178,7 +178,21 @@ def _validate_devices(
         _validate_actions(actions, path, errors)
         _validate_action_state_mappings(device, actions, path, errors)
         _validate_state_against_actions(device, path, errors)
+        _validate_light_capability(device, path, errors)
     return devices
+
+
+def _validate_light_capability(device: dict[str, Any], path: str, errors: list[str]) -> None:
+    """主灯用 mode，台灯用 level，同一盏灯不能两套都有。"""
+    if device.get("device_type") != "light":
+        return
+    state = device.get("state") or {}
+    actions = device.get("actions") or []
+    names = {item.get("action") for item in actions if isinstance(item, dict)}
+    has_mode = "mode" in state or "set_mode" in names
+    has_level = "level" in state or "set_percentage" in names
+    if has_mode and has_level:
+        errors.append(f"{path} light cannot combine set_mode/mode with set_percentage/level")
 
 
 def _validate_device_kind(device: dict[str, Any], path: str, errors: list[str]) -> None:

@@ -32,4 +32,5 @@ expected_finish 出现 facts 或 answered
 空调 target=180（超出该台 7–32）
 烤箱 mode=cool（不在该台 enum）
 夜灯带 set_percentage 却没有 state.level
+主灯同时带 mode 和 level
 ```

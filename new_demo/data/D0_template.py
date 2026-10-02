@@ -31,8 +31,20 @@ TASK_FILES = {
     "T4": "T4_dangerous_refusal.md",
     "T5": "T5_environment_query.md",
 }
-REQUEST_FILE = "D0_request.md"
-REVIEW_FILE = "D3_review.md"
+REQUEST_FILES = {
+    "T1": "D0_request_T1.md",
+    "T2": "D0_request_T2.md",
+    "T3": "D0_request_T3.md",
+    "T4": "D0_request_T4.md",
+    "T5": "D0_request_T5.md",
+}
+REVIEW_FILES = {
+    "T1": "D3_review_T1.md",
+    "T2": "D3_review_T2.md",
+    "T3": "D3_review_T3.md",
+    "T4": "D3_review_T4.md",
+    "T5": "D3_review_T5.md",
+}
 D6_FILES = {"T3": "D6_T3.md", "T4": "D6_T4.md", "T5": "D6_T5.md"}
 A_POLICY_FILE = "A_policy.md"
 
@@ -47,14 +59,14 @@ def normalize_category(category: str) -> str:
 
 
 def load_template(kind: str, category: str) -> str:
-    """task/D6 按 T 分文件；request/review 共用一份，不按 T 拆。"""
+    """task / request / review / D6 都按 T 分文件。"""
     code = normalize_category(category)
     if kind == "task":
         path = TEMPLATES_DIR / TASK_FILES[code]
     elif kind == "request":
-        path = TEMPLATES_DIR / REQUEST_FILE
+        path = TEMPLATES_DIR / REQUEST_FILES[code]
     elif kind == "review":
-        path = TEMPLATES_DIR / REVIEW_FILE
+        path = TEMPLATES_DIR / REVIEW_FILES[code]
     elif kind == "d6":
         if code not in D6_FILES:
             raise ValueError(f"D6 has no template for {code}")
@@ -95,7 +107,7 @@ def build_prompt(kind: str, category: str, values: dict[str, Any]) -> str:
 
 
 def load_personas(path: str | Path | None = None) -> list[dict[str, Any]]:
-    """读二十条画像。"""
+    """读二十五条画像。"""
     target = Path(path) if path else PERSONAS_PATH
     rows: list[dict[str, Any]] = []
     for line in target.read_text(encoding="utf-8").splitlines():
@@ -116,3 +128,14 @@ def display_names_from_home(home: dict[str, Any]) -> str:
         if isinstance(name, str) and name:
             names.append(name)
     return "、".join(names)
+
+
+def rooms_from_home(home: dict[str, Any]) -> str:
+    """把 s0 里的房间显示名收成顿号分隔的一句，给 D3 用。"""
+    names: list[str] = []
+    for room in home.get("rooms", []):
+        name = room.get("display_name")
+        if isinstance(name, str) and name:
+            names.append(name)
+    return "、".join(names)
+

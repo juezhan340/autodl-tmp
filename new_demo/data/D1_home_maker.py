@@ -98,7 +98,7 @@ def _place_required(
     placed: list[dict[str, Any]],
     catalog: list[dict[str, Any]],
 ) -> None:
-    """先保证空调、传感器、两盏灯，再按房间优先挂新家电。"""
+    """先保证空调、传感器、可调主灯或台灯、两盏灯，再按房间优先挂新家电。"""
     _place_matching(rng, rooms, placed, catalog, lambda item: item["device_type"] == "climate")
     _place_matching(rng, rooms, placed, catalog, lambda item: item["kind"] == "sensor")
     _place_matching(
@@ -106,7 +106,8 @@ def _place_required(
         rooms,
         placed,
         catalog,
-        lambda item: item["device_type"] == "light" and _has_action(item, "set_percentage"),
+        lambda item: item["device_type"] == "light"
+        and (_has_action(item, "set_percentage") or _has_action(item, "set_mode")),
     )
     _place_matching(
         rng,

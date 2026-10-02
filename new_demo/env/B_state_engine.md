@@ -33,5 +33,6 @@ inspect_device 稀疏，不补六个 null
 动作不存在   UNSUPPORTED_ACTION   夜灯调光、传感器写入走这条
 参数越界     BAD_REQUEST          state 不变；finish 的 OUT_OF_SAFE_RANGE 不在这里
 set_temperature 只改 target，范围看该设备 actions
-set_percentage 只改 level：风扇、电视音量、可调光灯、加湿器
+set_percentage 只改 level：风扇、电视音量、台灯、加湿器
+set_mode 改 mode：空调/洗衣机等，以及主灯 dim/bright
 ```
