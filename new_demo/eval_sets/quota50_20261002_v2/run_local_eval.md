@@ -12,9 +12,10 @@
   --workers          并发数，默认 2
   --max-turns        轮次上限，默认 12（覆盖评测集里的 10）
   --limit / --task-ids  只跑前 N 条或指定 task_id
-  --few-shot         按 SimuHome 结构：system → 三段示例（控制/拒绝/查询）→ 包装过的真实任务
+  --few-shot         打开 few-shot：system → 该类示例 → 包装过的真实任务
                      （真实任务里重申：示例不是真实环境、一次只输出一个 JSON、最多 12 步）
-                     只影响评测会话，不改 D0_templates 里的任何提示词文件
+  --few-shot-dir     按类别存放示例的目录，默认 fewshot_by_task/（T1–T5 各一个 JSON）
+                     缺文件时回退到内置全局示例；只影响评测会话，不改 D0_templates
 
 输出（--output-dir）
   local_model.env    指向本地服务的 DeepSeek_* 配置

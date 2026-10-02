@@ -54,7 +54,12 @@ FEWSHOT_MESSAGES = [
 
 
 class FewShotPolicy(DeepSeekPolicy):
-    """评测用策略：system + 三段示例 + 包装好的真实任务（对齐 SimuHome 的 one-shot 写法）。"""
+    """评测用策略：system + 该类示例 + 包装好的真实任务（对齐 SimuHome 的 one-shot 写法）。"""
+
+    def __init__(self, client: DeepSeekClient, messages: list[dict] | None = None) -> None:
+        """注入客户端与这一类专用的示例消息；缺省用内置全局示例。"""
+        super().__init__(client)
+        self._fewshot = list(messages) if messages else list(FEWSHOT_MESSAGES)
 
     def _start_episode(self, observation: dict, context: dict) -> None:
         """先按父类建 system+user，再插示例，并把真实用户话包成带规则的真实任务。"""
@@ -62,7 +67,7 @@ class FewShotPolicy(DeepSeekPolicy):
         if len(self._messages) >= 2:
             user_request = str(self._messages[-1].get("content", ""))
             wrapped = {"role": "user", "content": REAL_TASK_TEMPLATE.format(user_request=user_request)}
-            self._messages = [self._messages[0]] + FEWSHOT_MESSAGES + [wrapped]
+            self._messages = [self._messages[0]] + self._fewshot + [wrapped]
 def load_jsonl(path: str | Path) -> list[dict]:
     """读一行一个 JSON 对象的文件。"""
     rows: list[dict] = []
@@ -70,6 +75,19 @@ def load_jsonl(path: str | Path) -> list[dict]:
         if line.strip():
             rows.append(json.loads(line))
     return rows
+
+
+def load_fewshot_map(fewshot_dir: str | Path) -> dict[str, list[dict]]:
+    """按类别读 few-shot JSON；缺文件时回退到内置全局示例。"""
+    base = Path(fewshot_dir)
+    mapping: dict[str, list[dict]] = {}
+    for category in ("T1", "T2", "T3", "T4", "T5"):
+        path = base / f"{category}.json"
+        if path.exists():
+            mapping[category] = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            mapping[category] = list(FEWSHOT_MESSAGES)
+    return mapping
 
 
 def write_env(path: Path, base_url: str, model: str) -> None:
@@ -107,13 +125,18 @@ def run_one(
     args: argparse.Namespace,
     out_dir: Path,
     lock: threading.Lock,
+    fewshot_map: dict[str, list[dict]],
 ) -> dict:
     """跑一条任务，结果与轨迹各自追加落盘；单条失败不影响整批。"""
     scenario = build_scenario(task_row, gold_row, args.max_turns)
     started = time.time()
     row: dict = {"task_id": task_row["task_id"], "category": task_row["category"]}
     try:
-        policy = FewShotPolicy(client) if args.few_shot else DeepSeekPolicy(client)
+        if args.few_shot:
+            messages = fewshot_map.get(task_row["category"]) or FEWSHOT_MESSAGES
+            policy = FewShotPolicy(client, messages)
+        else:
+            policy = DeepSeekPolicy(client)
         result = EpisodeRunner(policy).run(scenario)
         record = result.record
         row.update(
@@ -157,6 +180,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--task-ids", default="", help="逗号分隔，只跑这些任务")
     parser.add_argument("--few-shot", action="store_true", help="在 system 与用户话之间插入 few-shot 示例")
+    parser.add_argument(
+        "--few-shot-dir",
+        default=str(Path(__file__).with_name("fewshot_by_task")),
+        help="按类别存放 few-shot JSON 的目录；缺文件回退到内置全局示例",
+    )
     args = parser.parse_args()
 
     tasks = load_jsonl(args.tasks_file)
@@ -171,6 +199,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     write_env(out_dir / "local_model.env", args.server, args.model)
     client = DeepSeekClient(env_path=out_dir / "local_model.env", raw_dir=out_dir / "api")
+    fewshot_map = load_fewshot_map(args.few_shot_dir) if args.few_shot else {}
     for name in ("results.jsonl", "trajectories.jsonl"):
         (out_dir / name).write_text("", encoding="utf-8")
 
@@ -179,7 +208,7 @@ def main() -> None:
     rows: list[dict] = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = [
-            pool.submit(run_one, task, golds[task["task_id"]], client, args, out_dir, lock)
+            pool.submit(run_one, task, golds[task["task_id"]], client, args, out_dir, lock, fewshot_map)
             for task in tasks
         ]
         for future in as_completed(futures):
@@ -200,6 +229,7 @@ def main() -> None:
         "server": args.server,
         "model": args.model,
         "few_shot": args.few_shot,
+        "few_shot_dir": args.few_shot_dir if args.few_shot else None,
     }
     (out_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

@@ -1,0 +1,66 @@
+[
+  {
+    "role": "user",
+    "content": "示例（多设备控制）：睡前把客厅电视关掉，卧室空调调低一点，卧室加湿器别动。"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"observe_home\", \"arguments\": {}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"rooms\": [{\"room_id\": \"room_bedroom\", \"display_name\": \"卧室\"}, {\"room_id\": \"room_living\", \"display_name\": \"客厅\"}]}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"inspect_room\", \"arguments\": {\"room_id\": \"room_living\"}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"room\": {\"room_id\": \"room_living\", \"devices\": [{\"device_id\": \"device_living_tv\", \"display_name\": \"客厅电视\"}]}}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"inspect_device\", \"arguments\": {\"device_id\": \"device_living_tv\"}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"device\": {\"device_id\": \"device_living_tv\", \"state\": {\"on\": true, \"mode\": \"tv\", \"level\": 40}, \"actions\": [{\"action\": \"turn_on\", \"params\": {}}, {\"action\": \"turn_off\", \"params\": {}}, {\"action\": \"set_percentage\", \"params\": {\"value\": {\"type\": \"integer\", \"minimum\": 0, \"maximum\": 100, \"step\": 1}}}]}}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"execute_action\", \"arguments\": {\"device_id\": \"device_living_tv\", \"action\": \"turn_off\", \"params\": {}}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"device_id\": \"device_living_tv\", \"action\": \"turn_off\", \"state_after\": {\"on\": false, \"mode\": \"tv\", \"level\": 40}, \"verified\": true, \"changed\": true}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"inspect_room\", \"arguments\": {\"room_id\": \"room_bedroom\"}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"room\": {\"room_id\": \"room_bedroom\", \"devices\": [{\"device_id\": \"device_bedroom_climate\", \"display_name\": \"卧室空调\"}, {\"device_id\": \"device_bedroom_humidifier\", \"display_name\": \"卧室加湿器\"}]}}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"inspect_device\", \"arguments\": {\"device_id\": \"device_bedroom_climate\"}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"device\": {\"device_id\": \"device_bedroom_climate\", \"state\": {\"on\": true, \"mode\": \"cool\", \"target\": 27.0}, \"actions\": [{\"action\": \"set_temperature\", \"params\": {\"value\": {\"type\": \"number\", \"minimum\": 7.0, \"maximum\": 32.0, \"step\": 0.5}}}]}}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\": \"execute_action\", \"arguments\": {\"device_id\": \"device_bedroom_climate\", \"action\": \"set_temperature\", \"params\": {\"value\": 26.5}}}"
+  },
+  {
+    "role": "user",
+    "content": "observation: {\"ok\": true, \"data\": {\"device_id\": \"device_bedroom_climate\", \"action\": \"set_temperature\", \"state_after\": {\"on\": true, \"mode\": \"cool\", \"target\": 26.5}, \"verified\": true, \"changed\": true}, \"error\": null}"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"name\":\"finish\",\"arguments\":{\"summary\":\"客厅电视已关闭，卧室空调调低了一档；卧室加湿器没有动。\",\"outcome\":\"completed\"}}"
+  }
+]
