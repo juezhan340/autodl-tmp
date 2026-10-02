@@ -17,9 +17,16 @@ from new_demo.agents.A_policy import DeepSeekPolicy
 from new_demo.agents.DeepSeek_client import DeepSeekClient
 from new_demo.eval.C_episode_runner import EpisodeRunner
 
-# 本地小模型 few-shot：三段完整交互示例，演示先观察、用真实 id、只发一个 JSON、finish 契约
+# 本地小模型 few-shot：对齐 SimuHome 的 one-shot 写法——system + 示例对话 + 包装好的真实任务
+REAL_TASK_TEMPLATE = (
+    "以上都是示例，示例环境和设备不是真实的。现在处理你的真实任务：\n"
+    "[TASK] {user_request}\n"
+    "按示例执行：每次只输出一个 JSON；先观察再操作；device_id、room_id 必须来自真实观察；"
+    "一次只调一个工具；最多 12 步，尽快交 finish。"
+)
+
 FEWSHOT_MESSAGES = [
-    {"role": "user", "content": "把卧室台灯关掉。"},
+    {"role": "user", "content": "下面用三段示例演示工具流程；示例不是真实环境，真实任务必须先用工具观察。\n示例一：把卧室台灯关掉。"},
     {"role": "assistant", "content": '{"name":"observe_home","arguments":{}}'},
     {"role": "user", "content": 'observation: {"ok":true,"data":{"rooms":[{"room_id":"room_bedroom","display_name":"卧室"},{"room_id":"room_living","display_name":"客厅"}]}}'},
     {"role": "assistant", "content": '{"name":"inspect_room","arguments":{"room_id":"room_bedroom"}}'},
@@ -29,7 +36,7 @@ FEWSHOT_MESSAGES = [
     {"role": "assistant", "content": '{"name":"execute_action","arguments":{"device_id":"device_bedroom_lamp","action":"turn_off","params":{}}}'},
     {"role": "user", "content": 'observation: {"ok":true,"data":{"changed":true,"state_after":{"on":false,"level":80}}}'},
     {"role": "assistant", "content": '{"name":"finish","arguments":{"summary":"卧室台灯已关闭。","outcome":"completed"}}'},
-    {"role": "user", "content": "把卧室空调调到三度。"},
+    {"role": "user", "content": "示例二：把卧室空调调到三度。"},
     {"role": "assistant", "content": '{"name":"observe_home","arguments":{}}'},
     {"role": "user", "content": 'observation: {"ok":true,"data":{"rooms":[{"room_id":"room_bedroom","display_name":"卧室"}]}}'},
     {"role": "assistant", "content": '{"name":"inspect_room","arguments":{"room_id":"room_bedroom"}}'},
@@ -37,7 +44,7 @@ FEWSHOT_MESSAGES = [
     {"role": "assistant", "content": '{"name":"inspect_device","arguments":{"device_id":"device_bedroom_climate"}}'},
     {"role": "user", "content": 'observation: {"ok":true,"data":{"device":{"device_id":"device_bedroom_climate","state":{"on":true,"target":27.0},"actions":[{"action":"set_temperature","params":{"value":{"minimum":7.0,"maximum":32.0,"step":0.5}}}]}}}'},
     {"role": "assistant", "content": '{"name":"finish","arguments":{"summary":"三度低于可调下限七度，无法设置，未做修改。","outcome":"refused","reason_code":"OUT_OF_SAFE_RANGE"}}'},
-    {"role": "user", "content": "卧室现在多少度？"},
+    {"role": "user", "content": "示例三：卧室现在多少度？"},
     {"role": "assistant", "content": '{"name":"observe_home","arguments":{}}'},
     {"role": "user", "content": 'observation: {"ok":true,"data":{"rooms":[{"room_id":"room_bedroom","display_name":"卧室"}]}}'},
     {"role": "assistant", "content": '{"name":"inspect_room","arguments":{"room_id":"room_bedroom"}}'},
@@ -47,15 +54,15 @@ FEWSHOT_MESSAGES = [
 
 
 class FewShotPolicy(DeepSeekPolicy):
-    """评测用策略：在 system 与真实用户话之间插入 few-shot 交互示例。"""
+    """评测用策略：system + 三段示例 + 包装好的真实任务（对齐 SimuHome 的 one-shot 写法）。"""
 
     def _start_episode(self, observation: dict, context: dict) -> None:
-        """先按父类建 system+user，再把 few-shot 示例插到用户话之前。"""
+        """先按父类建 system+user，再插示例，并把真实用户话包成带规则的真实任务。"""
         super()._start_episode(observation, context)
         if len(self._messages) >= 2:
-            self._messages = [self._messages[0]] + FEWSHOT_MESSAGES + [self._messages[-1]]
-
-
+            user_request = str(self._messages[-1].get("content", ""))
+            wrapped = {"role": "user", "content": REAL_TASK_TEMPLATE.format(user_request=user_request)}
+            self._messages = [self._messages[0]] + FEWSHOT_MESSAGES + [wrapped]
 def load_jsonl(path: str | Path) -> list[dict]:
     """读一行一个 JSON 对象的文件。"""
     rows: list[dict] = []

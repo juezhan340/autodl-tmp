@@ -12,7 +12,8 @@
   --workers          并发数，默认 2
   --max-turns        轮次上限，默认 12（覆盖评测集里的 10）
   --limit / --task-ids  只跑前 N 条或指定 task_id
-  --few-shot         在 system 与用户话之间插入三段完整交互示例（控制/拒绝/查询）
+  --few-shot         按 SimuHome 结构：system → 三段示例（控制/拒绝/查询）→ 包装过的真实任务
+                     （真实任务里重申：示例不是真实环境、一次只输出一个 JSON、最多 12 步）
                      只影响评测会话，不改 D0_templates 里的任何提示词文件
 
 输出（--output-dir）
