@@ -94,6 +94,18 @@ Qwen3-0.6B-GGUF\Qwen3-0.6B-Q8_0.gguf                             0.60 GB
 SHA-256  9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
 用途     早期 SFT/GRPO 实验基座
 路径     D:\D_program\models\Qwen3-0.6B-GGUF\
+
+Qwen3-1.7B-GGUF\Qwen3-1.7B-Q8_0.gguf                            2.02 GB
+SHA-256  9860780f3a1fab1f8f909a1b549ea3e62c22d19ab1a492b3a1026b38c5bd3ec3
+用途     200 条评测对照（newdoc/12），llama-server 用 -rea off 关思考
+来源     hf-mirror ggml-org/Qwen3-1.7B-GGUF（Q8_0）
+路径     D:\D_program\models\Qwen3-1.7B-GGUF\
+
+Qwen3.5-2B-GGUF\Qwen3.5-2B-Q8_0.gguf                            1.87 GB
+SHA-256  1b04acba824817554f4ce23639bc8495ff70453b8fcb047900c731521021f2c1
+用途     200 条评测对照（newdoc/12，112/200，目前最好）；多模态仓库，只跑文本 + --no-mmproj
+来源     hf-mirror unsloth/Qwen3.5-2B-GGUF（Q8_0）
+路径     D:\D_program\models\Qwen3.5-2B-GGUF\
 ```
 
 评测服务由本机 `llama-server.exe`（build 10991，Vulkan）提供：端口 18080、上下文 32768、2 slot；评测侧入口为 `new_demo/eval_sets/quota50_20261002_v2/run_local_eval.py`，默认 `--server http://127.0.0.1:18080`，2 路并发、12 轮上限。
