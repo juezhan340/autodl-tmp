@@ -28,12 +28,22 @@
     └── **/checkpoints/、**/out/  训练产物
 ```
 
+同一套仓库另有一份本机（Windows）部署，外部程序与权重同样放在仓库外：
+
+```text
+D:\homeflow\autodl-tmp            仓库根（与服务器 /root/autodl-tmp 同一套内容）
+D:\D_program\                     仓库外程序与权重
+├── llama.cpp\vulkan-b10991\      Windows 构建 10991（Vulkan 后端），提供 llama-server.exe
+├── models\                       本机评测与训练用 GGUF 权重
+└── venvs\minimind\               LoRA 可行性验证用的 Python 环境
+```
+
 ## 2. 第三方源码
 
 | 本地路径 | 用途 | 来源与版本状态 | 恢复方式 |
 |---|---|---|---|
-| `llama.cpp/` | Qwen GGUF 本机推理与吞吐测试 | 上游为 `https://github.com/ggml-org/llama.cpp.git`。本地目录没有 `.git`，二进制报告 `0.4.1-dev, commit unknown`；现存压缩包 SHA-256 为 `36ac6eef0bba8c3cfa37fe3006dfbcd58a44020ec4e09813fcfe4124c092c6d4` | 优先用现存 `llama.cpp-master.tar.gz` 解压；需要升级时重新克隆并单独记录 commit |
-| `minimind/` | 早期 SFT/GRPO 学习实验 | `https://github.com/jingyaogong/minimind.git`。本地快照没有 `.git`，无法证明精确 commit；2026-09-23 查询到上游 HEAD 为 `f659b55761b754d306bd140573493a6543cafd7f` | 按下面命令恢复一个干净、固定版本；数据集和权重另行下载 |
+| `llama.cpp/` | Qwen GGUF 本机推理与吞吐测试 | 上游为 `https://github.com/ggml-org/llama.cpp.git`。本地目录没有 `.git`，二进制报告 `0.4.1-dev, commit unknown`；现存压缩包 SHA-256 为 `36ac6eef0bba8c3cfa37fe3006dfbcd58a44020ec4e09813fcfe4124c092c6d4`；本机另有 Windows 构建 `D:\D_program\llama.cpp\vulkan-b10991`（`0.4.1-dev`，build 10991，commit `930e2fa59`，Vulkan 后端） | 优先用现存 `llama.cpp-master.tar.gz` 解压；需要升级时重新克隆并单独记录 commit；Windows 构建按同一 commit 重新编译 |
+| `minimind/` | 早期 SFT/GRPO 学习实验 | `https://github.com/jingyaogong/minimind.git`。本地快照没有 `.git`，无法证明精确 commit；2026-09-23 查询到上游 HEAD 为 `f659b55761b754d306bd140573493a6543cafd7f`；本机验证环境为 `D:\D_program\venvs\minimind`（Python 3.12.13、torch 2.9.1+cu128） | 按下面命令恢复一个干净、固定版本；数据集和权重另行下载 |
 | `simuprocject/Simuhome_experiment/` | SimuHome 对照实验 | 本地 remote 为 `https://github.com/Mr-luo-q/Simuhome_experiment.git`，本地 HEAD 为 `f8a813f237fca394edd36260dccef78aa3214335`；远端当前 `main` 为 `b828846f6a1b28e15460808026d1abb51e28641f` | 当前工作树含大量修改/删除且 packfile 已损坏，不把它视为干净基线；重建时克隆远端当前固定版本 |
 | `simuprocject/external_repos/connectedhomeip/` | Matter 数据模型对照 | `https://github.com/project-chip/connectedhomeip.git`，本地 HEAD 为 `ace3cccec2cd7580eaa77f8fc8ce2a38e55e45ca` | 本地 index 已损坏；重新克隆后检出该 commit |
 
@@ -54,7 +64,7 @@ git -C simuprocject/external_repos/connectedhomeip checkout ace3cccec2cd7580eaa7
 
 ## 3. 模型权重
 
-当前推理模型来自 ModelScope 的 `Qwen/Qwen2.5-7B-Instruct-GGUF`，本地放在 `models/qwen2.5-7b-instruct-gguf/`。
+服务器侧推理模型来自 ModelScope 的 `Qwen/Qwen2.5-7B-Instruct-GGUF`，本地放在 `models/qwen2.5-7b-instruct-gguf/`（相对 `/root/autodl-tmp`）。
 
 ```text
 qwen2.5-7b-instruct-q5_k_m-00001-of-00002.gguf
@@ -69,6 +79,32 @@ SHA-256  beba9d4f2f5a1fe7d144dcae332e68b52c26705c5310dece2e5d1997e091e134
 ```text
 https://modelscope.cn/models/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q5_k_m-00001-of-00002.gguf
 https://modelscope.cn/models/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q5_k_m-00002-of-00002.gguf
+```
+
+### 本机（Windows）评测与训练权重
+
+```text
+Qwen2.5-1.5B-Instruct-GGUF\qwen2.5-1.5b-instruct-q8_0.gguf       1.76 GB
+SHA-256  d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8
+用途     new_demo 250 条评测与 few-shot 对照（newdoc/01、04、05、07）
+来源     ModelScope Qwen/Qwen2.5-1.5B-Instruct-GGUF（Q8_0 量化）
+路径     D:\D_program\models\Qwen2.5-1.5B-Instruct-GGUF\
+
+Qwen3-0.6B-GGUF\Qwen3-0.6B-Q8_0.gguf                             0.60 GB
+SHA-256  9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+用途     早期 SFT/GRPO 实验基座
+路径     D:\D_program\models\Qwen3-0.6B-GGUF\
+```
+
+评测服务由本机 `llama-server.exe`（build 10991，Vulkan）提供：端口 18080、上下文 32768、2 slot；评测侧入口为 `new_demo/eval_sets/quota50_20261002_v2/run_local_eval.py`，默认 `--server http://127.0.0.1:18080`，2 路并发、12 轮上限。
+
+本机训练产物没有外部来源，只登记路径，不登记校验值（重新生成方式见 git 历史中的 LoRA 可行性评估：`git show 347e2c3:newdoc/08_LoRA可行性评估.md`）：
+
+```text
+D:\D_program\models\Qwen3-0.6B-sft-off-gguf\
+D:\D_program\models\Qwen3-0.6B-grpo-r0-gguf\、grpo-T1/、grpo-T2/、grpo-T3/
+D:\D_program\models\batch_checkpoints\batch_r1_b*_gguf\ … batch_r3_b*_gguf\
+D:\D_program\models\Qwen3-4B-GGUF\Qwen3-4B-Q4_K_M.gguf（2.33 GB，未用于当前评测）
 ```
 
 `minimind/checkpoints/`、`minimind/out/` 和 `minimind/minimind-3/` 中的训练权重也属于仓库外文件。它们是早期学习实验产物，不是 HomeFlow Demo V1/V1.1 的运行依赖。
@@ -95,6 +131,8 @@ PDF 的中文翻译版和提取文本可能来自本地阅读工具，不能由 
 原始响应：new_demo/data_raw/api/             Git 忽略
     ↓ 解析与 HomeEnv 重放验证
 交付数据：new_demo/data_processed/           小型、可审计版本可进入 Git
+    ↓
+评测结果：new_demo/runs/qwen15b_eval_*/       Git 忽略（轨迹与标签）
     ↓
 训练产物：checkpoints/、out/、runs/、wandb/   Git 忽略
 ```
