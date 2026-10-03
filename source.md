@@ -17,7 +17,8 @@
 │   └── benchmarks/               本机基准脚本与小型结果
 ├── 仓库外来源
 │   ├── llama.cpp/、minimind/     第三方训练或推理框架
-│   ├── simuprocject/*源码*/      第三方模拟器与 Matter 源码
+│   ├── simuprocject/Simuhome_experiment/  第三方模拟器源码
+│   │                              （connectedhomeip / Matter 副本已于 2026-10-03 删除）
 │   ├── 论文/                     论文 PDF 与提取文本
 │   └── models/                   模型权重
 └── 本地状态
@@ -45,7 +46,7 @@ D:\D_program\                     仓库外程序与权重
 | `llama.cpp/` | Qwen GGUF 本机推理与吞吐测试 | 上游为 `https://github.com/ggml-org/llama.cpp.git`。本地目录没有 `.git`，二进制报告 `0.4.1-dev, commit unknown`；现存压缩包 SHA-256 为 `36ac6eef0bba8c3cfa37fe3006dfbcd58a44020ec4e09813fcfe4124c092c6d4`；本机另有 Windows 构建 `D:\D_program\llama.cpp\vulkan-b10991`（`0.4.1-dev`，build 10991，commit `930e2fa59`，Vulkan 后端） | 优先用现存 `llama.cpp-master.tar.gz` 解压；需要升级时重新克隆并单独记录 commit；Windows 构建按同一 commit 重新编译 |
 | `minimind/` | 早期 SFT/GRPO 学习实验 | `https://github.com/jingyaogong/minimind.git`。本地快照没有 `.git`，无法证明精确 commit；2026-09-23 查询到上游 HEAD 为 `f659b55761b754d306bd140573493a6543cafd7f`；本机验证环境为 `D:\D_program\venvs\minimind`（Python 3.12.13、torch 2.9.1+cu128） | 按下面命令恢复一个干净、固定版本；数据集和权重另行下载 |
 | `simuprocject/Simuhome_experiment/` | SimuHome 对照实验 | 本地 remote 为 `https://github.com/Mr-luo-q/Simuhome_experiment.git`，本地 HEAD 为 `f8a813f237fca394edd36260dccef78aa3214335`；远端当前 `main` 为 `b828846f6a1b28e15460808026d1abb51e28641f` | 当前工作树含大量修改/删除且 packfile 已损坏，不把它视为干净基线；重建时克隆远端当前固定版本 |
-| `simuprocject/external_repos/connectedhomeip/` | Matter 数据模型对照 | `https://github.com/project-chip/connectedhomeip.git`，本地 HEAD 为 `ace3cccec2cd7580eaa77f8fc8ce2a38e55e45ca` | 本地 index 已损坏；重新克隆后检出该 commit |
+| `simuprocject/external_repos/connectedhomeip/` | Matter 数据模型对照 | `https://github.com/project-chip/connectedhomeip.git`，本地 HEAD 为 `ace3cccec2cd7580eaa77f8fc8ce2a38e55e45ca`。本地副本已于 2026-10-03 按作者要求删除（10,027 个文件、约 70 MB；运行时代码零引用） | 需要时重新克隆后检出该 commit；删除前已把目录里的自主分析《SimuHome对照_Matter官方仓库实现梳理.md》移到 `simuprocject/analysis_docs/` |
 
 推荐恢复到独立的外部目录，再建立软链接或按本表路径放置：
 
