@@ -1,0 +1,54 @@
+# training_start.json 中文说明
+
+本文件记录运行配置、统计或检查点元数据，不含密钥。
+
+```json
+{
+  "recorded_at_local": "2026-10-05T02:10:51.253304+08:00",
+  "started_at_local": "2026-10-05T02:06:00.533851+08:00",
+  "timezone": "Asia/Shanghai",
+  "full_training_started": true,
+  "standalone_gpu_test_executed": false,
+  "final_test_evaluated": false,
+  "external_judge_called": false,
+  "pid": 97835,
+  "process_alive_when_recorded": true,
+  "mode": "train",
+  "micro_batch_size": 4,
+  "gradient_accumulation_steps": 2,
+  "effective_batch": 8,
+  "epochs": 3,
+  "observed_global_step": 117,
+  "planned_updates": 189,
+  "first_step_loss": 0.3269,
+  "latest_step_loss": 0.0587,
+  "first_10_step_mean_loss": 0.30289,
+  "latest_10_step_mean_loss": 0.08214,
+  "observed_seconds_per_update": 2.331,
+  "estimated_training_updates_minutes": 7.34,
+  "estimated_total_minutes_with_validation_and_saving": [
+    8,
+    10
+  ],
+  "eta_is_estimate_not_completion": true,
+  "gpu_peak_allocated_gib_so_far": 22.43,
+  "checkpoint_retention": "each_epoch_all_retained_adapter_optimizer_scheduler_rng",
+  "base_weights_reused_not_copied_each_epoch": true,
+  "log_path": "/root/autodl-tmp/training_runs/10-5_sft/services/train.log",
+  "metrics_path": "/root/autodl-tmp/training_runs/10-5_sft/sft-main/metrics.jsonl",
+  "note": "启动阶段快照；训练loss属于逐batch指标，暂不能证明泛化效果。实测更新速度剔除epoch边界的验证和保存间隔，验证耗时单独记录；总8至10分钟仍是估算，后续进度以实时页面为准。",
+  "observed_epoch": 1.8639999999999999,
+  "speed_excludes_epoch_boundary_validation_and_saving": true,
+  "completed_checkpoint_names": [
+    "checkpoint-63"
+  ],
+  "completed_epoch_validation": [
+    {
+      "epoch": 1.0,
+      "global_step": 63,
+      "eval_loss": 0.08731061965227127,
+      "eval_runtime": 7.3309
+    }
+  ]
+}
+```

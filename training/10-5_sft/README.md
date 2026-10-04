@@ -50,7 +50,7 @@ browser_check.py 可选Playwright桌面/手机验证
 /root/autodl-tmp/sft-venv/bin/python training/10-5_sft/launch.py dashboard
 ```
 
-启动页面不会启动训练。页面和后续训练使用不同独立Linux会话，日志分别位于output_root/services/dashboard.log和train.log。当前页面显示尚未开始；历史smoke不作为正式进度。
+启动页面不会启动训练。页面和训练使用不同独立Linux会话，日志分别位于output_root/services/dashboard.log和train.log。用户已批准正式训练，2026-10-05 02:06（Asia/Shanghai）通过独立后台入口启动4×2、3个epoch；实时状态以页面为准。历史smoke不作为正式进度。
 
 本次页面、独立进程、公网访问和浏览器核验见reports/monitor_verification.md。浏览器验证是可选工具，不属于训练运行依赖。
 
@@ -59,9 +59,9 @@ browser_check.py 可选Playwright桌面/手机验证
 公网：https://uu753393-afb3-4b7a916d.westd.seetacloud.com:8443
 ```
 
-## 后续批准后才执行
+## 训练与评测入口
 
-下面命令是未来的完整训练和评测入口，本轮不执行。完整训练要求确认开关；最终测试要求另一个确认开关。训练最多3个epoch，每个都保留，验证loss选择adapter。
+下面是完整训练、恢复和评测入口。正式训练已按用户批准启动，请勿重复启动；最终200条测试仍需另一个确认开关，本次未执行。训练连续3个epoch，中间自动验证并保存，每个都保留，验证loss选择adapter。初期测速记录见reports/training_start.json及同名md；其中ETA是估算，不代表训练已完成。
 
 ```bash
 /root/autodl-tmp/sft-venv/bin/python training/10-5_sft/launch.py train --confirm-full-training
