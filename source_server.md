@@ -124,7 +124,7 @@ SHA-256  1b04acba824817554f4ce23639bc8495ff70453b8fcb047900c731521021f2c1
     → 留仓库外，只记位置与生成方法，不记内容
 ```
 
-## 7 2026-10-05 SFT准备与预测试
+## 7 2026-10-05 SFT训练与评测
 
 ```text
 代码       10-04/training/10-5_sft/，配同名中文md，进入Git
@@ -136,7 +136,10 @@ PyTorch    使用系统已有2.8.0+cu128，没有重复下载CUDA/PyTorch分发�
 冒烟       training_runs/10-5_sft/smoke-*/：仅两次更新和两个epoch检查点
 方案       newdoc/17_1.5B_SFT详细执行方案_500训练100验证200测试.md
 报告       training/10-5_sft/reports/preflight_report.json及.md
-状态       用户已批准500条正式SFT，4×2、连续3epoch已启动；不做200条最终模型评测
+状态       500条SFT、3epoch、189次更新已完成；四模型各200条测试及D6已完成
+效果       基线0%，epoch1 72.5%，epoch2 84.5%，epoch3 88%（C+D6完整成功）
+总结       newdoc/18_1.5B_SFT四模型效果_固定200条测试.md
+           newdoc/19_1.5B_SFT训练复盘_数据方法日志与调整.md
 ```
 
 环境恢复采用本实验的`requirements.txt`，基础PyTorch需与本服务器记录一致；模型仍使用§4已有权重。结果以预测试报告为准，短冒烟不代表正式SFT效果。
@@ -155,4 +158,12 @@ PyTorch    使用系统已有2.8.0+cu128，没有重复下载CUDA/PyTorch分发�
 启动记录   training/10-5_sft/reports/training_start.json及同名md
 ```
 
-页面已运行并验证公网访问，现在展示正式训练进度。训练与页面有不同独立会话和日志，不依赖对话或SSH；实例关机仍会停止进程。
+页面已运行并验证公网访问，训练自然结束后显示completed。训练与页面有不同独立会话和日志，不依赖对话或SSH；实例关机仍会停止进程。
+
+```text
+本地评测   training_runs/10-5_sft/comparison_test_20261005/{baseline,epoch1,epoch2,epoch3}
+语义补审   同目录semantic_review/：310条、930票、100并发上限，9.567秒，无系统失败
+完整统计   同目录final_comparison_statistics.json及.md
+API配置    10-04根目录.env.deepseek，已由Git忽略；报告与提交不含key
+补审入口   training/10-5_sft/review.py（只审已有轨迹，不加载本地模型或重训）
+```
