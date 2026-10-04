@@ -78,14 +78,22 @@
 
 2.5 新服务器
   ssh -p 18378 root@connect.westd.seetacloud.com（新容器 a6a040af…）
-  /root/autodl-tmp/10-04/ = 仓库快照（commit fcb90e9；不含 100 画像与千条批次）
+  /root/autodl-tmp/10-04/ = 仓库，2026-10-04 已对齐到 1cb6b5a（与云端一致）
   /root/autodl-tmp 下没有 autodl-temp 目录（只建过 10-04）
   ~/.codex/codex-models.json：补 codex-auto-review；gpt-5.6-sol 改 low/medium/high/xhigh
   四档、上下文 480k；改前有 .bak-20261004-* 备份
 
+  仓库同步约定（2026-10-04 起）：云端 GitHub 为主仓库，本地与服务器都推云端；
+  服务器 GitHub HTTPS 不可用（ls-remote 40s 超时），但 ssh github.com:22 通，
+  已把 origin 换成 git@github.com:juezhan340/autodl-tmp.git，并生成部署密钥：
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK984B6QU9tkRJnpp5ncYlVpdLxeicbH9fTDHeJr1Cb6 autodl-18378
+  待办：把上面公钥加到 GitHub 仓库 Settings → Deploy keys（勾选 Allow write access），
+  加完后服务器 git fetch/push 直连。
+
 2.6 网络
   本机直连 GitHub 不稳定，push 走本地代理：
   git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin main
+  服务器直连 GitHub HTTPS 超时；SSH(22) 可用，origin 走 git@github.com 拉取/推送
 ```
 
 ## 3 日志与产物位置
@@ -125,7 +133,7 @@
 ## 5 风险与下一步
 
 ```text
-1  服务器 10-04 快照落后：不含 100 画像与千条批次；要同步我可以用 tar/scp 重传。
+1  服务器 10-04 已对齐 1cb6b5a；把部署公钥加到 GitHub 后，服务器可直接 fetch/push。
 2  SFT 未开始；doc/21 是把轨迹转成 SFT 消息的方案底稿。
 3  quota200_20261004_partial 是崩溃残留，可留作额外数据，也可删。
 4  主提示词改动要走 newdoc/02 审阅流程；改完 pytest（当前 86 passed）。
