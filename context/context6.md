@@ -1,141 +1,133 @@
 # HomeFlow Demo 项目上下文（六）
 
-> 文档用途：接 [context5.md](context5.md)。供新对话恢复 2026-10-01 至 2026-10-03 的进展。
-> 梳理日期：2026-10-03。
-> 工作区：服务器 `/root/autodl-tmp`；本机 Windows `D:\homeflow\autodl-tmp`（同一套仓库内容）。
-> 注意：本文件在 `context/` 下，该目录不进 git，属于本地笔记。
+> 文档用途：接 context2_演进与现状.md。记录 2026-10-01 至 2026-10-04 的最新进展与现场状态。
+> 梳理日期：2026-10-04。
+> 关系：context1–5 已合并为 context1_初心与设计.md 与 context2_演进与现状.md；本文件是最新快照。
 
 ## 0 现在停在哪
 
-数据合成管线 D0–D6 仍是可用的主链，最近一次配额批次已经换成了统一 eq/ge/le 说法的提示词（commit `bab3628`）：`new_demo/runs/quota50_20261002_v2/`，302 条蓝图、302 条轨迹、250 条进集（每类 50）。这两天的工作重心从「继续跑数据」转到了三件事：把 newdoc 整理成可读的现状文档（09–12）、把新下载的两个小模型在同一批 200 条任务上评测完、把仓库边界（.gitignore 与 source.md）补到最新。
+数据管线稳定可用，最近一次配额批次一次跑满 **1000 条成功轨迹（每类 200）**；提示词、画像、评测、仓库边界都更新到 10-04 的状态。SFT / LoRA-GRPO 尚未开始。
 
 ```text
-本地小模型 200 条排行榜（同一批任务、11 版 few-shot、12 轮、2 路并发）
-  Qwen3.5-2B     112/200   ← 目前最好
-  Qwen2.5-1.5B    90/200   ← 旧基线
-  Qwen3-1.7B      63/200   ← 协议弱（失败 119/137 带 C-4）
-（三条版装配的旧成绩：85/200，仅作历史参考）
+最新数据批次   new_demo/runs/quota200_20261004_v2/
+  1000 条进集（每类 200，C-1..C-4 全过 + D6 对/跳过）
+  蓝图 1268、轨迹 1268（含失败留档）、尝试 1432、用时 722.5 秒
+  每类尝试：T1 203 / T2 391 / T3 410 / T4 224 / T5 204
+  服务：DeepSeek 官方 API（deepseek-chat），每类 10 路并发
 
-模型文件
-  D:\D_program\models\Qwen3-1.7B-GGUF\Qwen3-1.7B-Q8_0.gguf        2.02 GB
-  D:\D_program\models\Qwen3.5-2B-GGUF\Qwen3.5-2B-Q8_0.gguf        1.87 GB
-  （均已登记进 source.md §3，含 SHA-256）
+失败批        new_demo/runs/quota200_20261004_partial/（崩后残留 172 条，改名保留）
+提示词        new_demo/data_static/D0_templates/（19 份，02 重写版，commit bab3628）
+画像库        100 条（p01–p100；2026-10-04 由 25 条扩到 100，commit d7f3645）
+评测集        new_demo/eval_sets/quota50_20261002_v2/（250 条）
 
-GPU 状态：llama-server 已停止，显存回到桌面基线（约 874 MiB / 8151 MiB）
+200 条本地评测（11 版 few-shot、12 轮、2 路并发）
+  Qwen3.5-2B 112/200；Qwen2.5-1.5B 90/200；Qwen3-1.7B 63/200
+  （三条版 few-shot 旧成绩：85/200；详见 newdoc/12 与 newdoc/09）
+
+最近提交      d98b38f（千条批次 + 写盘重试补丁）
+              d7f3645（画像扩到 100）
+              fcb90e9（newdoc/10、11 审阅修正）
+              391f94b（删除 Matter 副本） / 301d76a（仓库改全收录） / 114484a（.gitignore+source.md）
 ```
 
 ## 1 新对话先读什么
 
 ```text
 必读（现状口径）
-  context/context6.md                     本文，看停点
-  newdoc/10_数据合成管线_全流程.md          D0→D6 真实管线（对应 doc/17，已按 23/26/27/28/29 更新）
-  newdoc/11_模块功能与输入输出示例.md       各模块职责与输入输出例子（对应 doc/18）
-  newdoc/12_新模型200条评测.md              本次两个新模型的评测结果与复现
-  newdoc/09_失败原因分析_200条.md           11 版 vs 三条版的失败原因占比（200 条）
-  source.md                                仓库边界、外部来源、模型权重登记
-  new_demo/data_static/D0_templates/       运行时提示词（19 份）
-  new_demo/eval_sets/quota50_20261002_v2/fewshot_by_task/   当前 11 版 few-shot 装配
+  context/context1_初心与设计.md        为什么做、设计原则、模块边界
+  context/context2_演进与现状.md        走到哪一步、关键数字与文件指针
+  context/context6.md                   本文：最近改动与现场状态
+  newdoc/10_数据合成管线_全流程.md       D0→D6 真实管线
+  newdoc/11_模块功能与输入输出示例.md    各模块职责与例子
+  newdoc/02_提示词_重写稿与旧版全文.md   19 份提示词全文（上半=现行）
+  source.md                             仓库边界、外部来源、模型登记
 
-历史对照（不要当待办）
-  context1–context5
-  doc/17、doc/18（初始设计；现状见 newdoc/10、11）
-  doc/23、26、27、28、29（四轮调整，已全部落地到代码与提示词）
-  newdoc/01、02、03、05、06、07（轨迹、提示词全文、评测记录）
+评测与数据
+  newdoc/12_新模型200条评测.md
+  newdoc/09_失败原因分析_200条.md
+  new_demo/runs/quota200_20261004_v2/   最新千条批次
 
-明确无关或已删除
-  newdoc/04、newdoc/08 已按作者要求删除（内容在 git 历史）
-  三条版 few-shot 只在 git 历史（fa872cf），当前工作区是 11 版
-  doc/14–16 旧 V2 writer_view、旧 A_policy 每轮重拼写法：都不要再参照
+不要当现行口径
+  已删除的 context1–5（内容合并进 context1/context2 两份）
+  doc/14–16 旧 V2 writer_view、旧 A_policy 每轮重拼写法
+  doc/23/26/27/28/29 是演进记录，不是待办
 ```
 
-## 2 这两天的进展（2026-10-01 → 10-03）
-
-### 2.1 newdoc 整理
-
-原来 15 份文档按主题两两合并成 8 份，之后删掉 04（few-shot 对比）和 08（LoRA 可行性）两份，又新增了 09–12。当前 newdoc 共 10 份：01 轨迹记录、02 提示词新旧全文、03 250 条任务与轨迹案例、05 1.5B 评测、06 few-shot 装配、07 换批验证、09 失败原因分析、10 数据合成管线、11 模块功能与输入输出、12 新模型评测，外加 README 索引。
-
-### 2.2 失败原因分析（newdoc/09）
-
-在同一批 200 条任务上对比两种 few-shot 装配：11 版 90/200、三条版 85/200。每条失败任务只归一个主因后，两版最大的失败原因都是「选错/漏做目标设备」（条件级复核 63 次 vs 63 次，属于 1.5B 的能力瓶颈）；三条版真正的退化在 T4——「拒绝理由码抄工具错误码」从 11 条涨到 27 条，原因是模型把 inspect 到的参数 schema 当成参数值传给设备，被 B 拒后又拿工具错误码当拒绝理由。
-
-### 2.3 数据合成文档（newdoc/10、11）
-
-10 号文档按十个阶段（D0、D1、D2-1、D2-2、D3、D4、停闸、D5、D6、进数据集）把真实管线讲了一遍，并列出 17/18 之后 12 处最终生效的差异：户型 9→15、画像 20→25、设备 15→21、主灯两档、加湿器去档位、observe_home 瘦身、T5 空观察、ge/le 相对初值、C-2 不冻整屋、A system 一次、提示词按 T 拆五份、配额跑法。11 号文档逐个模块写「职责自然语言 + 输入输出 + 边界 + 例子」，并附一题全链路（sc_T2_006）和错误码总表。
-
-### 2.4 新模型评测（newdoc/12）
+## 2 最近的改动（2026-10-03 → 10-04）
 
 ```text
-模型           T1     T2     T3     T4     T5      总      用时
-Qwen3.5-2B     38     19      9     15     31     112/200  302.7s
-Qwen2.5-1.5B   28      7      6     17     32      90/200   —
-Qwen3-1.7B     22      2      4     21     14      63/200  201.8s
+2.1 文档
+  newdoc 整理为 01/02/03/05/06/07/09/10/11/12 + README；
+  09 每类失败占比、10 数据管线、11 模块说明、12 新模型评测；
+  10、11 按代码审阅修正（D1 台数规则、T4 观察形状、probe 落盘、配额默认值、批次数字）。
+
+2.2 仓库边界
+  .gitignore 从白名单改为「除模型权重、llama.cpp、密钥、缓存外全收录」；
+  Matter（connectedhomeip）本地副本删除（10,027 个文件/约 70MB），
+  其目录里的自主分析移到 simuprocject/analysis_docs/；
+  仓库跟踪文件从 336 → 2771 →（含新批次后更多）。
+
+2.3 画像库
+  25 → 100 条（新增 p26–p100）；全部与 21 条设备目录对齐、无违禁词；
+  同步改 D0_personas.md、D0_template.py 注释、tests 与 newdoc/10、11。
+
+2.4 千条数据
+  quota200_20261004_v2 跑满 1000 条成功（每类 200）；
+  第一次尝试在 125 秒时因 Windows 高频重写 D_dataset.jsonl 触发
+  OSError(EINVAL) 崩溃；给 PIPE_pipeline、D_copy_dataset 的写盘加了重试后一次通过。
+
+2.5 新服务器
+  ssh -p 18378 root@connect.westd.seetacloud.com（新容器 a6a040af…）
+  /root/autodl-tmp/10-04/ = 仓库快照（commit fcb90e9；不含 100 画像与千条批次）
+  /root/autodl-tmp 下没有 autodl-temp 目录（只建过 10-04）
+  ~/.codex/codex-models.json：补 codex-auto-review；gpt-5.6-sol 改 low/medium/high/xhigh
+  四档、上下文 480k；改前有 .bak-20261004-* 备份
+
+2.6 网络
+  本机直连 GitHub 不稳定，push 走本地代理：
+  git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin main
 ```
-
-两次运行都没有报错。Qwen3.5-2B 的增益集中在 T1/T2，弱点仍是 T3/T4；Qwen3-1.7B 总分低但 T4 最好，主要问题是收尾契约（C-4）。评估时统一关思考（`-rea off`，实测响应无 `reasoning_content`），few-shot 统一用当前 11 版，所以可直接和 newdoc/09 的 90/200 对比。
-
-### 2.5 仓库管理
-
-`.gitignore` 补了模型/缓存规则（`*.bin`、`*.h5`、`*.npz`、`**/venv/`、`**/.cache/` 等）；`source.md` §3 登记了本机 1.5B、Qwen3-0.6B、Qwen3-1.7B、Qwen3.5-2B 四个权重（含 SHA-256），§1 补了本机 Windows 布局（`D:\homeflow\autodl-tmp` ↔ `/root/autodl-tmp`，外部目录 `D:\D_program`）。相关提交：`114484a`、`5b14cd4`。
 
 ## 3 日志与产物位置
 
-每个评测批次目录都完整落盘，结构一致：
-
 ```text
-new_demo/runs/<批次>/
-  results.jsonl        每条任务的 labels(C-1..C-4)、turn_count、finish、elapsed_sec
-  trajectories.jsonl   完整轨迹（scenario + record 五项 + labels）
-  summary.json         总数、c_all_pass、errors、用时、workers、max_turns、model、few_shot
-  local_model.env      指向本地服务的配置（base_url / model，不含密钥）
-  api/completions.jsonl 每一次模型调用的请求记录（request_id、role、usage、正文）
-  api/errors.jsonl     只有出错时才有
-```
+每个批次目录结构一致：
+  results/trajectories/summary/local_model.env/api/completions.jsonl（本地模型评测）
+  或 data_processed/{D4_blueprints,D5_trajectories,D_dataset,D_manifest}
+     + data_raw/{D2_drafts,D34_failures,api/completions}
+     + reports/{progress.md,quota.md,D4_preview.md}
 
-```text
 本机关键批次
-  quota50_20261002_v2                最新数据合成批次（302 蓝图 / 302 轨迹 / 250 进集）
-  qwen15b_eval_100_fs_by_task        1.5B 11 版 A 批（100 条）
-  qwen15b_eval_100b_fs               1.5B 11 版 B 批（100 条）
-  qwen15b_eval_100_fs_by_task3       1.5B 三条版 A 批
-  qwen15b_eval_100b_fs3              1.5B 三条版 B 批
-  qwen3_17b_eval_200_fs              Qwen3-1.7B 200 条（本次新增）
-  qwen35_2b_eval_200_fs              Qwen3.5-2B 200 条（本次新增）
+  quota200_20261004_v2          最新千条（1000 进集）
+  quota200_20261004_partial     崩溃残留（172 进集）
+  quota50_20261002_v2           上一批 250 条
+  qwen15b_eval_100/100b_*       1.5B 评测（11 版 / 三条版）
+  qwen3_17b_eval_200_fs         63/200
+  qwen35_2b_eval_200_fs         112/200
+
+注意：runs/ 现在随仓库入库；llama-server 的 stdout 没有单独落盘（模型调用记录在 api/）。
 ```
 
-注意两点：`new_demo/runs/` 和 `context/` 都不进 git；llama-server 的 stdout 这次没有单独落盘（服务日志只在运行时可见），每次模型调用的内容在 `api/completions.jsonl` 里，下次起服务可以加 `--log-file` 把服务侧日志也存下来。
-
-## 4 新模型评测复现
+## 4 复现
 
 ```text
-服务（模型二选一，端口 18080；2 slot × 16K；关思考；不加载多模态投影）
-  llama-server.exe -m <gguf> --host 127.0.0.1 --port 18080 ^
-    -c 32768 --parallel 2 -ngl 99 --no-mmproj -rea off --jinja
+千条配额批次
+  python -m new_demo.PIPE_run --quota --target-success 200 --max-attempts 600 \
+    --workers-per-category 10 --seed <seed> --output-dir new_demo/runs/<批次>
 
-评测（200 条 = _eval100_ids.txt + _eval100b_ids.txt 合并成逗号串）
-  python new_demo/eval_sets/quota50_20261002_v2/run_local_eval.py ^
-    --server http://127.0.0.1:18080 --model <name> ^
-    --output-dir new_demo/runs/<批次名> --workers 2 --max-turns 12 ^
-    --few-shot --task-ids "<200 个 id>"
-
-模型来源（hf-mirror，直连 HF CDN 不通）
-  ggml-org/Qwen3-1.7B-GGUF   Qwen3-1.7B-Q8_0.gguf
-  unsloth/Qwen3.5-2B-GGUF    Qwen3.5-2B-Q8_0.gguf
+本地模型评测（11 版 few-shot，200 条 = A+B 两个 id 文件合并）
+  llama-server.exe -m <gguf> --port 18080 -c 32768 --parallel 2 -ngl 99 --no-mmproj -rea off --jinja
+  python new_demo/eval_sets/quota50_20261002_v2/run_local_eval.py \
+    --server http://127.0.0.1:18080 --model <name> --output-dir new_demo/runs/<批次> \
+    --workers 2 --max-turns 12 --few-shot --task-ids "<200 个 id>"
 ```
 
 ## 5 风险与下一步
 
 ```text
-1  不要拿 context5 的旧数字当最新：x5x10 的 43/50、进集 41 是 10-01 的状态，
-   现在的数据基准是 quota50_20261002_v2 的 250 条进集。
-
-2  主提示词 new_demo/data_static/D0_templates/ 不要擅自改；
-   改动走 newdoc/02 的审阅流程，落盘后跑 pytest。
-
-3  Qwen3.5-2B 的 T3（9/40）和 T4（15/40）仍是弱项；
-   Qwen3-1.7B 的 C-4 问题（119/137）适合单独做失败归因。
-
-4  如果要做「模型 × 装配」2×2：把 fa872cf 的三条版恢复到
-   fewshot_by_task_3shot/，用 --few-shot-dir 指过去再跑 200 条，
-   不要覆盖当前 11 版目录。
+1  服务器 10-04 快照落后：不含 100 画像与千条批次；要同步我可以用 tar/scp 重传。
+2  SFT 未开始；doc/21 是把轨迹转成 SFT 消息的方案底稿。
+3  quota200_20261004_partial 是崩溃残留，可留作额外数据，也可删。
+4  主提示词改动要走 newdoc/02 审阅流程；改完 pytest（当前 86 passed）。
+5  本机 GitHub 推送依赖代理 7897；若代理关闭，push 会失败。
 ```
