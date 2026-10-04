@@ -37,6 +37,8 @@ ssh         ssh -p 18378 root@connect.westd.seetacloud.com（容器 a6a040af…�
 ├── llama.cpp/                   第三方推理框架源码 + CUDA 构建（§3）
 ├── llama.cpp-46847e61.tar.gz    源码包原件（保留，可重解压）
 ├── model-tools-venv/            modelscope CLI 1.40.1 独立 venv（/bin/ms）
+├── sft-venv/                    2026-10-05训练预测试环境，继承PyTorch 2.8.0+cu128
+├── training_runs/10-5_sft/      数据划分、微型冒烟adapter、检查点、评测轨迹（不入库）
 └── .ms_cache/                   modelscope 下载缓存（实际几乎不用，ms 直写目标目录）
 ```
 
@@ -121,3 +123,20 @@ SHA-256  1b04acba824817554f4ce23639bc8495ff70453b8fcb047900c731521021f2c1
 密钥、缓存、下载日志
     → 留仓库外，只记位置与生成方法，不记内容
 ```
+
+## 7 2026-10-05 SFT准备与预测试
+
+```text
+代码       10-04/training/10-5_sft/，配同名中文md，进入Git
+环境       /root/autodl-tmp/sft-venv/，venv采用system-site-packages
+依赖       Transformers4.57.3 / TRL0.24.0 / PEFT0.18.0 / Accelerate1.11.0
+           Datasets4.4.1 / Tokenizers0.22.1 / Safetensors0.7.0 / Pytest8.4.2
+PyTorch    使用系统已有2.8.0+cu128，没有重复下载CUDA/PyTorch分发包
+数据       training_runs/10-5_sft/data/：500训练、100验证、200测试、194备用
+冒烟       training_runs/10-5_sft/smoke-*/：仅两次更新和两个epoch检查点
+方案       newdoc/17_1.5B_SFT详细执行方案_500训练100验证200测试.md
+报告       training/10-5_sft/reports/preflight_report.json及.md
+状态       本轮只准备与预测试；不启动500条完整训练，不做200条模型评测
+```
+
+环境恢复采用本实验的`requirements.txt`，基础PyTorch需与本服务器记录一致；模型仍使用§4已有权重。结果以预测试报告为准，短冒烟不代表正式SFT效果。
