@@ -107,7 +107,7 @@ def build_prompt(kind: str, category: str, values: dict[str, Any]) -> str:
 
 
 def load_personas(path: str | Path | None = None) -> list[dict[str, Any]]:
-    """读二十五条画像。"""
+    """读一百条画像。"""
     target = Path(path) if path else PERSONAS_PATH
     rows: list[dict[str, Any]] = []
     for line in target.read_text(encoding="utf-8").splitlines():

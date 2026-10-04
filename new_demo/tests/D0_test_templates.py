@@ -14,11 +14,11 @@ from new_demo.data.D0_template import (
 from new_demo.data.D3_reviewer import program_leak_codes
 
 
-def test_personas_are_twenty_five() -> None:
-    """画像二十五条，四字段，不含 sex/env_pref。"""
+def test_personas_are_one_hundred() -> None:
+    """画像一百条（p01–p100），四字段，不含 sex/env_pref。"""
     rows = load_personas()
-    assert len(rows) == 25
-    assert rows[-1]["persona_id"] == "p25"
+    assert len(rows) == 100
+    assert rows[-1]["persona_id"] == "p100"
     assert rows[0]["persona_id"] == "p01"
     assert "occupation" in rows[0]
     assert "habits" in rows[0]
