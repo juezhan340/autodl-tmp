@@ -18,11 +18,14 @@ source.md §3 开头登记的 Qwen2.5-7B GGUF 属于老服务器时期记录，�
 ssh         ssh -p 18378 root@connect.westd.seetacloud.com（容器 a6a040af…）
 仓库        /root/autodl-tmp/10-04
             origin → git@github.com:juezhan340/autodl-tmp.git（SSH，deploy key autodl-18378）
-硬件        RTX 5090 32G（Blackwell，sm_120）· 25 核 · 754G 内存
+硬件        RTX 5090 32G（Blackwell，sm_120）；实例CPU配额25逻辑核、内存限额92GiB
+            宿主Xeon Platinum 8470Q、208逻辑CPU、约754GiB内存，不代表实例独占
 磁盘        /root/autodl-tmp 50G 数据盘（权重与缓存都放这里）；系统盘 30G 只放 conda 与系统件
 网络        ModelScope 直连可用（约 17 MB/s，实测为实例出口上限）
             GitHub HTTPS 直连超时；第三方源码走 ghfast.top 代理（见 §3）
 ```
+
+2026-10-05直接读取cgroup v2：`cpu.max=2500000 100000`、`memory.max=98784247808`，确认上述实例限额。5090的软件兼容组合、SFT显存峰值、已验证负载与换机检查项见`newdoc/5090算力支持能力.md`；最新项目进度见`context/context4.md`。
 
 ## 2 目录结构（/root/autodl-tmp，仓库外）
 
@@ -67,7 +70,8 @@ cmake --build /root/autodl-tmp/llama.cpp/build -j 24
   llama-cli  -ngl 99 单轮生成 Qwen3-0.6B-Q8_0：576 t/s
   llama-server  -m Qwen3-0.6B-Q8_0.gguf --port 18080 -c 32768 --parallel 2 -ngl 99 --jinja
     /health → {"status":"ok"}；带 chat_template_kwargs.enable_thinking=false 请求，回答 "2 + 3 = 5"
-    nvidia-smi 实测该进程占 4792 MiB 显存（0.6B 的 32k×2 slot KV 缓存是主力，不是权重）
+    nvidia-smi 实测该进程占 4792 MiB 显存（启动参数为总 ctx 32768、parallel 2；
+    额外占用包含 KV 缓存和计算缓冲，不把该参数直接记成每 slot 32k×2）
   Qwen3 默认开思考：max_tokens 小时 content 为空、文本在 reasoning_content
     跑评测算式时要关思考：Windows 侧是 -rea off，这里是请求里带 enable_thinking=false
 ```

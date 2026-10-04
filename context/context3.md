@@ -1,8 +1,8 @@
-# HomeFlow Demo 项目上下文（六）
+# HomeFlow Demo 项目上下文（三）
 
-> 文档用途：接 context2_演进与现状.md。记录 2026-10-01 至 2026-10-04 的最新进展与现场状态。
+> 文档用途：接 context2_演进与现状.md。保留 2026-10-01 至 2026-10-04 的进展与现场状态。
 > 梳理日期：2026-10-04。
-> 关系：context1–5 已合并为 context1_初心与设计.md 与 context2_演进与现状.md；本文件是最新快照。
+> 关系：旧 context1–5 已合并为 context1_初心与设计.md 与 context2_演进与现状.md；本文原名 context6.md，2026-10-05 按用户要求改名为 context3.md。下文保留当时快照，最新SFT和评测状态见 context4.md。
 
 ## 0 现在停在哪
 
@@ -36,7 +36,7 @@
 必读（现状口径）
   context/context1_初心与设计.md        为什么做、设计原则、模块边界
   context/context2_演进与现状.md        走到哪一步、关键数字与文件指针
-  context/context6.md                   本文：最近改动与现场状态
+  context/context3.md                   本文：截至10-04的改动与历史现场
   newdoc/10_数据合成管线_全流程.md       D0→D6 真实管线
   newdoc/11_模块功能与输入输出示例.md    各模块职责与例子
   newdoc/02_提示词_重写稿与旧版全文.md   19 份提示词全文（上半=现行）
