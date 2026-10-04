@@ -273,7 +273,7 @@ def continue_from_d5(
                 judged[index - 1] = row
     rows = [item for item in judged if item is not None]
     _write_jsonl(processed / "D5_trajectories.jsonl", rows)
-    stats = write_dataset(rows, root)
+    stats = _call_retry(lambda: write_dataset(rows, root))
     stats["trajectories"] = len(rows)
     stats["stopped_after"] = "dataset"
     stats["workers"] = workers
@@ -550,7 +550,7 @@ class _QuotaSink:
             raw / "D34_failures.jsonl",
             raw / "D2_drafts.jsonl",
         ):
-            path.write_text("", encoding="utf-8")
+            _write_text_retry(path, "")
         self.processed = processed
         self.raw = raw
         self.reports = reports
@@ -605,16 +605,16 @@ class _QuotaSink:
                 "target": self.target_success,
                 "max_attempts": self.max_attempts,
             }
-        stats = write_dataset(kept, self.root)
+        stats = _call_retry(lambda: write_dataset(kept, self.root))
         stats["attempt_count"] = len(self.drafts)
         stats["blueprint_count"] = len(self.blueprints)
         stats["trajectories"] = len(self.trajectories)
         stats["failure_count"] = len(self.failures)
         stats["per_category"] = per_category
         stats["elapsed_sec"] = round(time.time() - self.started, 1)
-        (self.processed / "D_manifest.json").write_text(
+        _write_text_retry(
+            self.processed / "D_manifest.json",
             json.dumps(stats, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         self._write_progress(stats, final=final)
         _write_preview(self.reports / "D4_preview.md", self.blueprints, self.failures)
@@ -646,9 +646,9 @@ class _QuotaSink:
             f"traj {stats.get('trajectories')}  copied {stats.get('copied')}"
         )
         lines.append("")
-        (self.reports / "progress.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _write_text_retry(self.reports / "progress.md", "\n".join(lines) + "\n")
         if final:
-            (self.reports / "quota.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            _write_text_retry(self.reports / "quota.md", "\n".join(lines) + "\n")
 
 
 def _number_blueprints(drafts: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -724,22 +724,48 @@ def _write_preview(path: Path, blueprints: list[dict[str, Any]], failures: list[
             lines.append(
                 f"- {item.get('category')} stage={item.get('stage')} code={item.get('error_code')} {item.get('message')}"
             )
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_text_retry(path, "\n".join(lines) + "\n")
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
-    """覆盖写入 jsonl。"""
+    """覆盖写入 jsonl（带 OSError 重试）。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    _write_text_retry(path, "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
 
 
 def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
-    """追加一行。"""
+    """追加一行（带 OSError 重试）。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    _append_text_retry(path, json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _call_retry(action: Callable[[], Any]) -> Any:
+    """执行一次写盘动作；Windows 高频重写偶发 OSError(EINVAL) 时重试。"""
+    last: OSError | None = None
+    for index in range(6):
+        try:
+            return action()
+        except OSError as exc:
+            last = exc
+            time.sleep(0.2 * (index + 1))
+    assert last is not None
+    raise last
+
+
+def _write_text_retry(path: Path, text: str) -> None:
+    """写文本文件；路径父目录存在，失败重试 6 次。"""
+    _call_retry(lambda: path.write_text(text, encoding="utf-8"))
+
+
+def _append_text_retry(path: Path, text: str) -> None:
+    """追加文本；失败重试 6 次。"""
+
+    def action() -> None:
+        """追加一次。"""
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(text)
+
+    _call_retry(action)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:

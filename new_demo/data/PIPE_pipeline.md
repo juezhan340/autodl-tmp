@@ -23,6 +23,7 @@
 写入：
   上述 jsonl。generate_until_d4 若发现旧 D5_trajectories.jsonl 会删掉。
   配额模式禁止写到已有 D4_blueprints.jsonl 的目录。
+  所有覆盖写/追加写带 OSError 重试（Windows 高频重写同一文件偶发 EINVAL）。
 
 不负责：
   当 A、写提示词。

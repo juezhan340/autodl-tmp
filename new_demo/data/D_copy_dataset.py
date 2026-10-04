@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,11 +35,26 @@ def write_dataset(
     root = Path(output_dir)
     processed = root / "data_processed"
     processed.mkdir(parents=True, exist_ok=True)
-    with (processed / "D_dataset.jsonl").open("w", encoding="utf-8") as handle:
-        for row in kept:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    (processed / "D_manifest.json").write_text(
+    _write_text_retry(
+        processed / "D_dataset.jsonl",
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in kept),
+    )
+    _write_text_retry(
+        processed / "D_manifest.json",
         json.dumps(stats, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
     )
     return stats
+
+
+def _write_text_retry(path: Path, text: str) -> None:
+    """写文本文件；Windows 高频重写同一路径偶发 OSError(EINVAL)，重试 6 次。"""
+    last: OSError | None = None
+    for index in range(6):
+        try:
+            path.write_text(text, encoding="utf-8")
+            return
+        except OSError as exc:
+            last = exc
+            time.sleep(0.2 * (index + 1))
+    assert last is not None
+    raise last
