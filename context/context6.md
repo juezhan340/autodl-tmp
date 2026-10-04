@@ -87,6 +87,9 @@
   （默认 medium，报错起因）、gpt-6-astra 去掉站不认的 ultra、补 gpt-6-luna 条目；
   config.toml effort none → medium；备份 .bak-20261004-205509
 
+  2026-10-04 21:00 全部 10 个模型上下文窗口统一 480k（含 astra 从 1050k 降为 480k、
+  terra max 872k → 480k）；备份 codex-models.json.bak-20261004-210008
+
   仓库同步约定（2026-10-04 起）：云端 GitHub 为主仓库，本地与服务器都推云端；
   服务器 GitHub HTTPS 不可用（ls-remote 40s 超时），但 ssh github.com:22 通，
   已把 origin 换成 git@github.com:juezhan340/autodl-tmp.git，并生成部署密钥：
