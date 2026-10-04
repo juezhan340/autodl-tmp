@@ -140,3 +140,17 @@ PyTorch    使用系统已有2.8.0+cu128，没有重复下载CUDA/PyTorch分发�
 ```
 
 环境恢复采用本实验的`requirements.txt`，基础PyTorch需与本服务器记录一致；模型仍使用§4已有权重。结果以预测试报告为准，短冒烟不代表正式SFT效果。
+
+当前正式配置已按用户要求调整为micro-batch4、梯度累计2，有效batch8；旧2条轨迹冒烟仍作为历史证据，本次未重跑GPU训练。数据划分内容不变，每个epoch保留完整checkpoint。
+
+```text
+展示服务   独立后台进程，0.0.0.0:6008，每3秒读取真实训练状态
+本机地址   http://127.0.0.1:6008
+公网映射   https://uu753393-afb3-4b7a916d.westd.seetacloud.com:8443
+进程日志   training_runs/10-5_sft/services/dashboard.log
+验证报告   training/10-5_sft/reports/monitor_verification.md
+启动入口   training/10-5_sft/launch.py dashboard
+训练入口   launch.py train --confirm-full-training（本次未执行）
+```
+
+页面已运行并验证公网访问，当前显示尚未开始训练。训练与页面有不同独立会话和日志，不依赖对话或SSH；实例关机仍会停止进程。

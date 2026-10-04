@@ -176,6 +176,13 @@ def test_epoch_args_keep_all_checkpoints(config, tmp_path):
     assert args.save_strategy.value == "epoch"
     assert args.save_total_limit is None
     assert args.save_only_model is False
+    formal = build_training_args(config, tmp_path, False)
+    assert formal.per_device_train_batch_size == 4
+    assert formal.gradient_accumulation_steps == 2
+    assert formal.save_strategy.value == "epoch"
+    assert formal.save_total_limit is None
+    assert formal.save_only_model is False
+    assert formal.logging_steps == 1
 
 
 def test_checkpoint_index_requires_optimizer_state(config, tmp_path):
