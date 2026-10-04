@@ -90,6 +90,11 @@
   2026-10-04 21:00 全部 10 个模型上下文窗口统一 480k（含 astra 从 1050k 降为 480k、
   terra max 872k → 480k）；备份 codex-models.json.bak-20261004-210008
 
+  2026-10-04 21:19 服务器 Claude Code（VS Code 插件）配 DeepSeek：
+  ~/.claude/settings.json 的 env 按 DeepSeek 官方 Claude Code 文档写入
+  （base_url=api.deepseek.com/anthropic、模型 deepseek-flash[1m] 等 9 项），
+  ANTHROPIC_AUTH_TOKEN 留空待填
+
   仓库同步约定（2026-10-04 起）：云端 GitHub 为主仓库，本地与服务器都推云端；
   服务器 GitHub HTTPS 不可用（ls-remote 40s 超时），但 ssh github.com:22 通，
   已把 origin 换成 git@github.com:juezhan340/autodl-tmp.git，并生成部署密钥：
