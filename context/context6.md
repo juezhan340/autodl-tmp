@@ -83,6 +83,10 @@
   ~/.codex/codex-models.json：补 codex-auto-review；gpt-5.6-sol 改 low/medium/high/xhigh
   四档、上下文 480k；改前有 .bak-20261004-* 备份
 
+  2026-10-04 20:55 按站实测再修：gpt-6.1-sol 档位 none → low/medium/high/xhigh/max
+  （默认 medium，报错起因）、gpt-6-astra 去掉站不认的 ultra、补 gpt-6-luna 条目；
+  config.toml effort none → medium；备份 .bak-20261004-205509
+
   仓库同步约定（2026-10-04 起）：云端 GitHub 为主仓库，本地与服务器都推云端；
   服务器 GitHub HTTPS 不可用（ls-remote 40s 超时），但 ssh github.com:22 通，
   已把 origin 换成 git@github.com:juezhan340/autodl-tmp.git，并生成部署密钥：
