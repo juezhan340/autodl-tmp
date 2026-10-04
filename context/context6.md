@@ -87,8 +87,8 @@
   服务器 GitHub HTTPS 不可用（ls-remote 40s 超时），但 ssh github.com:22 通，
   已把 origin 换成 git@github.com:juezhan340/autodl-tmp.git，并生成部署密钥：
     ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK984B6QU9tkRJnpp5ncYlVpdLxeicbH9fTDHeJr1Cb6 autodl-18378
-  待办：把上面公钥加到 GitHub 仓库 Settings → Deploy keys（勾选 Allow write access），
-  加完后服务器 git fetch/push 直连。
+  2026-10-04 公钥已加到仓库 Deploy keys（Allow write access）；实测服务器 git fetch
+  5.5s、临时分支推送成功并已删除，本地/服务器/云端三方同步打通。
 
 2.6 网络
   本机直连 GitHub 不稳定，push 走本地代理：
