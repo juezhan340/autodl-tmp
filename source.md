@@ -82,6 +82,37 @@ https://modelscope.cn/models/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.
 https://modelscope.cn/models/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q5_k_m-00002-of-00002.gguf
 ```
 
+### 服务器侧新增：三档小模型两套权重（2026-10-04）
+
+```text
+用途一  推理评测：GGUF Q8_0，供 llama.cpp / llama-server（对齐本机 Windows 评测口径）
+用途二  SFT / GRPO 训练：HF safetensors 整仓库（含 tokenizer，供 transformers / ms-swift）
+落地    /root/autodl-tmp/models/<模型名>/{hf,gguf}/（仓库外，不入 git）
+下载    scripts/download_models.sh（6 进程并行，全走 ModelScope）
+校验    scripts/verify_models.py，产出 scripts/model_manifest.json 与 .md
+
+Qwen3-0.6B-Q8_0.gguf                                             0.64 GB
+SHA-256  9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031
+来源     ModelScope Qwen/Qwen3-0.6B-GGUF（Q8_0）
+路径     models/Qwen3-0.6B/gguf/
+训练版   models/Qwen3-0.6B/hf/ ← ModelScope Qwen/Qwen3-0.6B（1.52 GB）
+
+qwen2.5-1.5b-instruct-q8_0.gguf                                  1.89 GB
+SHA-256  d7efb072e7724d25048a4fda0a3e10b04bdef5d06b1403a1c93bd9f1240a63c8
+来源     ModelScope Qwen/Qwen2.5-1.5B-Instruct-GGUF（Q8_0）
+路径     models/Qwen2.5-1.5B-Instruct/gguf/
+训练版   models/Qwen2.5-1.5B-Instruct/hf/ ← ModelScope Qwen/Qwen2.5-1.5B-Instruct（3.10 GB）
+
+Qwen3.5-2B-Q8_0.gguf                                             2.01 GB
+SHA-256  1b04acba824817554f4ce23639bc8495ff70453b8fcb047900c731521021f2c1
+来源     ModelScope unsloth/Qwen3.5-2B-GGUF（Q8_0；多模态仓库，评测只跑文本 + --no-mmproj）
+路径     models/Qwen3.5-2B/gguf/
+训练版   models/Qwen3.5-2B/hf/ ← ModelScope Qwen/Qwen3.5-2B（4.57 GB，多模态）
+
+三个 GGUF 的 SHA-256 与下方「本机（Windows）」同名文件完全一致，
+说明与 newdoc/05、12 的旧评测同源同量化；完整文件清单见 scripts/model_manifest.md（自动生成）
+```
+
 ### 本机（Windows）评测与训练权重
 
 ```text
