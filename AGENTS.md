@@ -152,7 +152,7 @@ text
   1. git add -A
   2. git commit，中文消息说明这次改了什么
   3. 若配置了远端 origin，commit 后再 push
-当前状态：仓库没有远端，只做本地提交。
+
 
 提交红线
   .env.deepseek、data_raw/、runs/、模型分发包由 .gitignore 排除
