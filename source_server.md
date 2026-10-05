@@ -171,3 +171,24 @@ PyTorch    使用系统已有2.8.0+cu128，没有重复下载CUDA/PyTorch分发�
 API配置    10-04根目录.env.deepseek，已由Git忽略；报告与提交不含key
 补审入口   training/10-5_sft/review.py（只审已有轨迹，不加载本地模型或重训）
 ```
+
+## 8 2026-10-05 GRPO落地与4×4冒烟
+
+```text
+代码       10-04/training/10-5_grpo/；复用sft-venv，无新增框架下载
+文档       newdoc/1004推进文档/12_GRPO落地设计_轨迹预处理奖励判定与4x4冒烟.md
+当前GPU    RTX5090，32607MiB；驱动580.76.05，与旧硬件快照不同
+输入模型   models/Qwen2.5-1.5B-Instruct/hf/，冻结BF16
+输入SFT    training_runs/10-5_sft/sft-main/selected_adapter/，复制双adapter
+CPU证据    training_runs/10-5_grpo/check-20261005T145457955818Z/
+           800条旧轨迹重放，原文件指纹不变，不加载模型、不调用API
+GPU证据    training_runs/10-5_grpo/smoke-20261005T145556954487Z/
+           4任务组×4新轨迹，实际4路生成，micro2累计8，一次参数更新
+保存       同目录smoke_adapter/policy/、optimizer.pt；不覆盖SFT模型
+API评审    同目录finish_review/，16个输入、48票/48次HTTP尝试，无pending
+显存       allocated峰值4780.01MiB，reserved峰值6990MiB；两者不能相加
+耗时       56.035秒，最长2762token；不代表完整训练耗时与极限显存
+状态       冒烟已结束，原SFT与固定参考不变，完整500任务GRPO未启动
+```
+
+运行产物均放在仓库外，JSON/JSONL配同名中文说明。GPU入口是`smoke.py --mode smoke --confirm-smoke --confirm-api-review`，仅执行一次更新；没有完整train入口、断点恢复或GRPO展示服务。本次生成线程已关闭，结束后GPU无遗留训练进程。
