@@ -262,3 +262,27 @@ Batch      micro16、累计1；rollout仍4路；未另做GPU冒烟，不自动�
 续跑policy指纹与原中断checkpoint一致，固定参考仍SFT epoch3。首个运行的OOM如实记录，后续峰值和训练状态以新运行日志为准。
 
 续跑首个实际更新已完成，累计step2、覆盖80/500、生成320条；采用6个有差异任务组，micro16反向两次后一次step。该续跑批峰值allocated13842.15MiB、reserved15398MiB（13.52/15.04GiB），无OOM。训练继续，200评测尚未启动；这些是首批证据而非最终峰值/效果。
+
+### 8.3 2026-10-06：覆盖500的冻结checkpoint完整评测与复盘
+
+500首遍全部生成评分于UTC2026-10-05 19:03:25保存checkpoint-coverage500，step21、2000候选轨迹，168唯一任务组/672轨迹实际进入梯度。后续反馈复访继续，update032也已保存，不能把任务覆盖500当成整个训练结束。
+
+```text
+独立评测入口   training/10-5_grpo/evaluate_checkpoint.py及同名md
+阶段分析入口   training/10-5_grpo/analyze_run.py及同名md
+阶段权重       当前续跑/checkpoint-coverage500/policy/，21更新，不是最终权重
+评测目录       当前续跑/checkpoint_evaluations/checkpoint-coverage500-20261005T191100770011Z/
+启动/结束      北京时间2026-10-06 03:11:00 → 03:28:21，1040.522秒
+生成           原固定200，greedy，相同A内嵌few-shot，1129次generate，无生成错误
+原D6           107条、321合法票/321 completion日志，无待确认，原轨迹/权重不变
+完整成功       SFT epoch3 176 → 100任务GRPO179 → 覆盖500阶段182/200（91%）
+严格安全成功   175 → 178 → 182；检出严重过程违规轨迹2 → 2 → 0
+配对变化       相对SFT9改善/3退步；相对100阶段5改善/2退步
+分析证据       当前续跑/analysis/coverage500-step21/analysis.json及同名md
+综合报告       newdoc/1004推进文档/13_GRPO500任务阶段评测_训练复盘与下一步改进.md
+上下文更新     context/context4.md，已在综合报告写完后更新
+```
+
+复访现场快照截至北京时间03:46:32：PID24357仍running，39/64实际更新、872候选组、1248采用轨迹；fixed_reference_unchanged=true。最终checkpoint与自动最终200评测尚未完成，未来以active_run/status为准。6008继续显示主训练，独立阶段评测进程已自然退出，其状态在自身目录，不覆写主训练状态。
+
+第13文档补齐真实失败案例、T5 E/F停用、当前mean-only与归一化候选的边界。没有实施新奖励、新归一化或下一轮训练；原200已经用于诊断，不能称新的盲测。也纠正了AMP描述：原CUDA log_softmax亦可自动提升FP32，显存改善来自真实token位置筛选、LM head分块和重算，不归因于单纯换精度。

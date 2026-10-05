@@ -2,15 +2,15 @@
 
 2026-10-06：policy支持从`policy_adapter`独立加载，默认仍兼容原SFT起点；`sft_reference`始终从`sft_adapter`加载。分别核对两份源张量的FP32键、精度和数值，不要求GRPO起点与SFT参考相等。基座共享，参考与基座冻结，优化器只含policy。
 
-正式第二次更新OOM定位于TRL BF16 `log_softmax`：micro16不同轨迹的生成位置取并集后，词表输出及softmax中间量同时常驻。`logprob_token_chunk=128`启用Qwen2专用等价概率路径：完整16轨迹decoder照常前向，提取每条真实policy位置，按128个token投影整个词表，FP32归一化；梯度路径使用PyTorch非重入checkpoint重算LM head，减少大矩阵常驻。old/current/reference均走同一路径。没有截断上下文、改变温度、奖励、KL或32轨迹的token分母；FP32概率数值精度相较原BF16提升，不宣称逐bit相同。未配置该项时保留历史TRL路径。
+正式第二次更新OOM定位于TRL BF16 logits分支的`log_softmax`：micro16不同轨迹的生成位置取并集后，词表输出及softmax中间量同时常驻。`logprob_token_chunk=128`启用Qwen2专用等价概率路径：完整16轨迹decoder照常前向，提取每条真实policy位置，按128个token投影整个词表，显式FP32归一化；梯度路径使用PyTorch非重入checkpoint重算LM head，减少大矩阵常驻。old/current/reference均走同一路径。没有截断上下文、改变温度、奖励、KL或32轨迹的token分母。旧CUDA autocast路径也会将log_softmax升至FP32，显存改善来自矩阵位置筛选、分块与重算，不能归因于精度升级；不宣称逐bit相同。未配置该项时保留历史TRL路径。
 
-职责：加载共享基座与两个SFT adapter，构造完整上下文训练批次，计算实际采样token的概率和GRPO裁剪/KL损失。
+职责：加载共享基座、policy及固定SFT参考adapter，构造完整上下文训练批次，计算实际采样token的概率和GRPO裁剪/KL损失。
 
 ```text
 输入：模型配置、packed轨迹、old/ref概率、组内优势
 读取：本地HF权重、epoch3 selected_adapter、TRL selective_log_softmax
 输出：模型/tokenizer、token logprob、可反向loss、KL/裁剪统计
-写入：无；检查点由smoke.py保存
+写入：无；检查点由run_stage/train_full或历史smoke调用方保存
 不负责：环境采样、奖励判定、完整GRPO Trainer及多轮训练调度
 ```
 

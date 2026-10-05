@@ -610,7 +610,7 @@ reserved峰值   27760MiB ≈ 27.11GiB（与allocated不相加）
 
 固定参考未改，`checkpoint-interrupted/policy`和AdamW状态保存成功。policy指纹为`16311db08a7c9a121e42f35b973eba259ab406c93273bb220063c6a461e2fdf6`；参考指纹仍为`9ce3055acc1608beed5172ac79f402e65daabe3c821877344792d01ee44d3c97`。旧目录的`failure.json/md`与完整traceback保留。
 
-修复层级落在LM head概率计算。原路径对16条轨迹生成位置的并集投影Qwen大词表，BF16 log-softmax反向需要保留多个大矩阵。新路径沿用本机Transformers Qwen2的decoder与lm_head分层，完整16条上下文仍参与一次decoder前向，只抽每条实际生成位置；每128个生成token投影完整词表，FP32归一化，再用PyTorch非重入checkpoint重算head。未截断上下文、未删监督token、未改变reward/优势/KL/32条全局分母。概率精度从原BF16升为FP32，不能宣称逐bit相同；old/current/reference均使用同一新路径。源码依据为本机官方`modeling_qwen2.py:449–463`和TRL `utils.py:1486–1518`。
+修复层级落在LM head概率计算。原路径对16条轨迹生成位置的并集投影Qwen大词表，log-softmax反向需要保留多个大矩阵。新路径沿用本机Transformers Qwen2的decoder与lm_head分层，完整16条上下文仍参与一次decoder前向，只抽每条实际生成位置；每128个生成token投影完整词表，显式FP32归一化，再用PyTorch非重入checkpoint重算head。未截断上下文、未删监督token、未改变reward/优势/KL/32条全局分母。原CUDA autocast也会将log_softmax升至FP32，显存改善来自减少不监督位置矩阵、分块与重算，不能归因于精度升级；不宣称逐bit相同。old/current/reference均使用同一新路径。源码依据为本机官方`modeling_qwen2.py:449–463`和TRL `utils.py:1486–1518`；AMP精度口径纠正见第13文档[R4]。
 
 ```text
 恢复首步policy + AdamW状态

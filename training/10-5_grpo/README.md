@@ -73,3 +73,21 @@ https://uu753393-981f-3f635753.westd.seetacloud.com:8443
 随后第二次更新softmax OOM，首步与失败日志已保留。已直接从中断checkpoint续跑，当前入口配置为`full_resume_config.json`、训练PID24357、目录`full500-resume-20261005T181501989146Z`。保留micro16累计2，完整decoder不变，只把LM head的真实生成token概率改为128token分块与checkpoint重算；恢复52项覆盖和反馈，不复用未提交轨迹。6008页面自动切换新运行。详见12文档11.5节。
 
 续跑首批已完成：累计step2、覆盖80项、micro16×累计2实际执行；该批allocated/reserved峰值13.52/15.04GiB。训练仍在后台，实际最新状态以6008页面或运行状态文件为准。
+
+2026-10-06已保存coverage500（step21）与update032，主训练继续复访。按用户要求独立评测冻结coverage500，不停训练、不改其状态；原200+C/D6完成，182/200（91%），待确认0、检出严重过程违规0。相对SFT176有9改善3退步，相对100阶段179有5改善2退步。这是阶段模型成绩，不是尚未结束的最终权重成绩。
+
+```text
+evaluate_checkpoint.py / 同名md
+  --training-run指向当前正式运行，--checkpoint checkpoint-coverage500
+  --detach --confirm-api-review独立启动200评测
+  输出checkpoint_evaluations/checkpoint-coverage500-20261005T191100770011Z/
+analyze_run.py / 同名md
+  --checkpoint-step 21，按完整step前缀重算候选/采用/配对/过程安全
+  输出analysis/coverage500-step21/analysis.json/md及真实PNG
+综合文档
+  newdoc/1004推进文档/13_GRPO500任务阶段评测_训练复盘与下一步改进.md
+最新上下文
+  context/context4.md，先写完综合文档再更新
+```
+
+独立评测已完成，勿重复执行同一200以刷分。原始轨迹和checkpoint指纹未变；未新跑测试或冒烟。当前主训练入口及奖励/mean-only优势均未在此轮改动，最终权重仍会自动评测。
