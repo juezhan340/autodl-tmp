@@ -220,3 +220,5 @@ Batch      micro16、累计1；rollout仍4路；未另做GPU冒烟，不自动�
 本轮完整CPU回归149项通过，页面桌面/手机/窄屏/宽屏、canvas曲线像素和轮询检查通过；检查没有发起GPU训练或收费API。正式训练由上面的显式双确认入口启动，后台继续执行。
 
 第一阶段训练现已完成：100任务、400轨迹、25次实际optimizer更新，无OOM；25个更新批次合计803.484秒，均值32.139秒，最长完整采样序列2721 token。最终分配峰值25480.26MiB、预留27800MiB（24.88/27.15GiB），固定参考与SFT源文件保持不变。`checkpoint-stage1/policy/`及`training_report.json/md`已落盘，原固定200评测已自动开始。最终评测状态与结果看实时状态和`evaluation/comparison.json`，不要把这里的启动记录当作评测完成证明。
+
+后续200评测已完成：C+D6完整成功179/200（89.5%），已有epoch3为176/200（88%）；6题改善、3题退步，无待审或D6系统失败。原D6审查108条、324张合法票，原始评测轨迹指纹未变。结果位于同目录`evaluation/comparison.json/md、grpo_summary.json/md、reviewed_trajectories.jsonl/md`。训练进程自然结束，6008页面仍运行并显示completed；不自动启动第二阶段。
