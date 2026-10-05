@@ -24,26 +24,26 @@ def adapter_digest(model, name):
 
 
 def load_model(config):
-    """加载一份BF16基座和两套FP32 SFT副本，不修改原SFT检查点。"""
+    """加载BF16共享基座，独立读取可训练policy和固定SFT参考。"""
     import torch
     from peft import PeftModel, get_peft_model_state_dict, set_peft_model_state_dict
     from safetensors.torch import load_file
     from transformers import AutoModelForCausalLM, AutoTokenizer
     model = AutoModelForCausalLM.from_pretrained(config["base_model"], local_files_only=True, torch_dtype=torch.bfloat16, attn_implementation="sdpa")
-    model = PeftModel.from_pretrained(model, config["sft_adapter"], adapter_name="policy", is_trainable=True)
+    policy_path = config.get("policy_adapter", config["sft_adapter"])
+    model = PeftModel.from_pretrained(model, policy_path, adapter_name="policy", is_trainable=True)
     reference_config = copy.deepcopy(model.peft_config["policy"])
     reference_config.inference_mode = True
     model.add_adapter("sft_reference", reference_config)
     for key, parameter in model.named_parameters():
         if ".lora_A." in key or ".lora_B." in key:
             parameter.data = parameter.data.float()
-    saved = load_file(config["sft_adapter"] + "/adapter_model.safetensors")
-    set_peft_model_state_dict(model, saved, adapter_name="policy")
-    set_peft_model_state_dict(model, saved, adapter_name="sft_reference")
-    for name in ("policy", "sft_reference"):
+    for name, path in (("policy", policy_path), ("sft_reference", config["sft_adapter"])):
+        saved = load_file(path + "/adapter_model.safetensors")
+        set_peft_model_state_dict(model, saved, adapter_name=name)
         current = get_peft_model_state_dict(model, adapter_name=name)
         if set(current) != set(saved) or any(value.dtype != torch.float32 or not torch.equal(value.cpu(), saved[key]) for key, value in current.items()):
-            raise ValueError("adapter FP32 tensors differ from the saved SFT adapter")
+            raise ValueError(f"{name} FP32 tensors differ from its source adapter")
     for module in model.modules():
         if isinstance(module, torch.nn.Dropout):
             module.p = 0.0
@@ -51,6 +51,7 @@ def load_model(config):
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.enable_input_require_grads()
     model.to("cuda")
+    model._policy_logprob_chunk = config.get("logprob_token_chunk", 0)
     activate(model, "policy")
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(config["base_model"], local_files_only=True)
@@ -80,9 +81,40 @@ def make_batch(packed, pad_id, device):
 
 def token_logps(model, batch, temperature):
     """只为采样位置的并集计算词表logits，避免回执位置的巨大输出矩阵。"""
+    if getattr(model, "_policy_logprob_chunk", 0):
+        return chunked_token_logps(model, batch, temperature, model._policy_logprob_chunk)
     from trl.trainer.utils import selective_log_softmax
     logits = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], logits_to_keep=batch["positions"], use_cache=False).logits
     return selective_log_softmax(logits / temperature, batch["targets"])
+
+
+def chunked_token_logps(model, batch, temperature, chunk_size):
+    """保留完整micro的decoder图，仅对真实生成token分块投影词表并重算。"""
+    import torch
+    import torch.nn.functional as F
+    from torch.utils.checkpoint import checkpoint
+    base = model.get_base_model()
+    if base.config.model_type != "qwen2" or type(chunk_size) is not int or chunk_size < 1:
+        raise ValueError("chunked probability path requires Qwen2 and a positive token chunk")
+    hidden = base.model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], use_cache=False, return_dict=True).last_hidden_state
+    active = batch["mask"].bool()
+    selected = hidden[:, batch["positions"], :][active]
+    targets = batch["targets"][active]
+
+    def project(states, labels):
+        """FP32归一化保留完整词表概率，checkpoint不保存大词表softmax图。"""
+        logits = base.get_output_embeddings()(states)
+        logps = F.log_softmax((logits / temperature).float(), dim=-1)
+        return logps.gather(-1, labels[:, None]).squeeze(-1)
+
+    values = []
+    for start in range(0, len(selected), chunk_size):
+        states, labels = selected[start:start + chunk_size], targets[start:start + chunk_size]
+        if torch.is_grad_enabled() and states.requires_grad:
+            values.append(checkpoint(project, states, labels, use_reentrant=False))
+        else:
+            values.append(project(states, labels))
+    return torch.zeros(active.shape, dtype=torch.float32, device=hidden.device).masked_scatter(active, torch.cat(values))
 
 
 def surrogate_loss(current, old, reference, advantages, mask, denominator, beta, epsilon):

@@ -1,5 +1,7 @@
 # GRPO落地设计：轨迹预处理、奖励判定与4×4冒烟
 
+最新进度（北京时间2026-10-06）：500训练池已正式启动，方案与实际记录见第11节。原正式运行在第二次更新softmax OOM，首步及失败日志保留；已按11.5节优化LM head概率计算并从中断权重续跑，仍为micro16累计2。下文原冒烟及100阶段描述均为历史，不代表当前尚未开训。
+
 日期：2026-10-05，Asia/Shanghai。承接第11文档的讨论，本文对齐实际代码`training/10-5_grpo/`和本次运行产物。第11文档保留历史分析；当前奖励以本文r2为准。
 
 本轮已执行CPU重放校验和一次GPU参数更新，未启动500任务完整GRPO训练。5090当前可用，四路rollout没有自动降为一或二路。所谓“落地”在本轮指奖励证据、采样token、参考模型和单次更新闭环；完整多轮训练、断点恢复及监控服务还没有实现。
@@ -519,3 +521,119 @@ loss标量接近0，也不等于策略梯度为0
 目前看法：可以比较标准化与当前mean-only，暂不把标准化当作必改项。更优先的是增加能产生可靠好坏差异的任务组；扩大有效batch可以一起考虑，但要分开记录采样覆盖、更新次数与归一化方式，避免几项同时变化后无法判断原因。本节没有执行这些候选调整。
 
 证据读取：本次运行的`metrics.jsonl`、25批`rewards.jsonl/advantages.json`及`evaluation/comparison.json`；本项目`reward.py`、`model_math.py`与本机安装的官方TRL0.24.0源码。分组统计为逐组重算，不从截图颜色或肉眼曲线猜测。
+
+## 11. 正式500任务池方案与直接执行（2026-10-06）
+
+本轮决定使用整个500项训练池，继续训练第一阶段最终policy；固定KL参考仍为SFT epoch3。每次参数更新采用32条完整轨迹，即8个任务组、每组G4，micro16累计2。沿用奖励r2、组内减均值、不除标准差、beta=0.02、学习率1e-5。本次重点改变采样和有效batch，不同时改奖励和优势缩放。
+
+```text
+第一阶段最终policy + 原AdamW状态
+  ↓ 固定SFT epoch3参考，绝不把参考替换成GRPO权重
+训练池500项：T1～T5各100，排除validation/test
+  ↓ 剩余400项优先全覆盖，再用当前policy刷新前100项
+同一policy版本下逐任务新生成4条轨迹，完整环境重放、奖励复核
+  ↓ 最多收集32个候选组；争取6个有差异组 + 1个易题锚点 + 1个困难组
+选满8个完整组：32条 → micro16反向一次 → micro16反向一次 → optimizer.step
+  ↓ 更新后，未采用的旧候选轨迹不带入下一次更新
+全500项覆盖完成后，按反馈变化采样；最后在固定200项test上评测
+```
+
+### 11.1 采样模块
+
+职责：保证500项全覆盖，并提高有奖励差异任务的出现概率。先打乱剩余400项，再打乱前100项；每部分按五类轮转穿插。原100项结果只用于标记历史类别和抽样优先级，所有训练轨迹均重新生成。
+
+输入是`train_scenarios.jsonl`、第一阶段`selected_tasks.json`及历史奖励；输出是当前policy版本的新G4候选组。每个任务的反馈状态为`informative`（四条奖励有差异）、`easy`（同分且四条均成功安全）或`hard`（其余同分组）。覆盖结束后，在每类内部按informative:hard:easy=6:3:1加权抽任务，并降低被反复抽到的任务权重；五类轮转，不永久删除困难题或易题。
+
+每次更新争取6个informative组，优先选择结构化进度、取证、错误、虚假finish或安全项存在差异的组；仅软判定产生差异的组仍可训练，但单独记录。再保留易题和困难组各一个。候选窗口上限32组，达不到理想配比时用已生成的新组补满8组；只有整窗全部优势为0时跳过参数更新，并记录跳过原因，避免纯KL更新被算成有效学习。每个G4组整体进入或离开，不挑单条赢家，也不把历史概率用于新policy更新。
+
+写入`selected_tasks.jsonl`、`sampler_state.json`、`candidates/*/`和每批`selection.json`。状态明确区分唯一任务覆盖数、实际生成候选组数、采用轨迹数和真实optimizer更新数。裁剪、重放、API待复核等基础设施失败直接失败，不能偷偷给低奖励冒充任务失败。
+
+### 11.2 更新模块与规模上限
+
+正式预算为最多1500个候选任务组（500项首次覆盖加最多1000次复访），最多64次实际参数更新；这两个数是资源上限，不伪称一定能完成64次有效更新。停止前必须完成500项首次覆盖；若更新上限先到，后续只完成覆盖与奖励记录，不再更新。覆盖后达到任一预算上限即停止。候选不足8组的最终尾批只记日志，不做改变batch口径的小批更新。
+
+```text
+一次更新：8任务组 × 4条 = 32条完整轨迹
+显存同时参与反向：16条；累计次数：2
+loss分母：本次32条全部真实生成token数
+每个micro直接累积该全局分母下的梯度，不再额外除以2
+rollout同时生成：4条；候选轨迹及old/ref概率缓存放CPU/磁盘
+```
+
+共享BF16基座与两套FP32 LoRA保持不变。policy从第一阶段最终adapter加载，参考从原SFT adapter加载；两者起点不同是预期行为。恢复第一阶段AdamW动量，核对参数组数量及动量张量形状；采样随机数使用本轮独立固定seed，不宣称逐bit断点续跑。固定参考及原文件哈希在更新后核对。
+
+micro16此前峰值allocated约24.88GiB、reserved约27.15GiB；累计2通常不同时保留两个micro的计算图，但更长历史仍可能OOM。按用户要求直接正式开跑，不做新冒烟、不自动降micro；异常写入`failure.json`、stdout/stderr和已更新权重的中断checkpoint。
+
+### 11.3 落盘、监控和结束评测
+
+训练入口为`training/10-5_grpo/train_full.py`，配置为`full_config.json`，采样器为`sampler.py`，均配同名中文md。新运行位于`/root/autodl-tmp/training_runs/10-5_grpo/full500-*`，不覆盖第一阶段目录。每个候选组保存原轨迹、采样token、重放证据、复核结果、奖励和优势；每次采用批保存32条轨迹、old/ref概率、loss/KL/梯度/显存/耗时报告；总日志写入`train.log`、`metrics.jsonl`和原子更新的`training_status.json`。
+
+模型大权重只在实际第32次更新、全500项覆盖完成及训练结束保存；名称分别为`checkpoint-update032`、`checkpoint-coverage500`、`checkpoint-full500`，已保存项保留在checkpoint索引内。异常时另存`checkpoint-interrupted`。动态采样没有固定数据epoch，不把这些里程碑叫epoch checkpoint。
+
+6008页面继续展示真实reward、loss、KL、梯度、成功/安全/虚假finish、显存，以及500项覆盖率、候选组预算、有差异组占比、采用组数和真实更新次数。训练与页面均以独立会话后台进程运行。训练结束自动用原200项test、原提示词及原C+D6评测口径比较SFT epoch3与本轮最终权重；训练reward不能替代固定评测结果。
+
+动态采样的外部参考为DAPO原论文（arXiv:2503.14476）。这里只借鉴增加非零组内信号的思路，保留本项目的KL、连续奖励和锚点组，不声称复现DAPO整套算法。本文明确记录本地约束和自己的采样决策。
+
+### 11.4 本次实际启动记录
+
+本节方案先写入，随后实现并直接启动正式任务，没有新跑pytest、GPU冒烟或小规模规模试验。后台启动UTC为2026-10-05 18:04:54，北京时间2026-10-06 02:04:54。
+
+```text
+运行目录  /root/autodl-tmp/training_runs/10-5_grpo/full500-20261005T180454543706Z/
+训练PID   22635（独立会话；实际存活核对services/train.json的启动身份）
+监控PID   22658，独立监听0.0.0.0:6008
+公网      https://uu753393-981f-3f635753.westd.seetacloud.com:8443
+状态      已载入policy与固定SFT参考，AdamW状态恢复成功；正在正式采样与更新
+初始证据  initialization.json/md、run_config.json/md已落盘
+训练日志  train.log、metrics.jsonl/md、training_status.json/md
+奖励证据  candidates/candidate-*/{rollouts,evidence,rewards}.jsonl及advantages.json
+```
+
+监控本机API已展示500池、micro16累计2和候选预算，公网healthz返回ok。第一批候选完成复核并落盘，无API错误。运行继续后台执行；这里只确认启动和真实日志，最终效果由结束后的固定200评测给出。
+
+首个实际参数更新已完成，证据为本次`windows/window-001/update_report.json`及`update_metrics.jsonl`。同一policy先生成32个候选组（128条），采用其中8个完整组（32条）；采用组内5个有差异，其中2个带结构化分项差异，另3个差异来自软判定。没有达到理想的6个差异组时按方案补齐新锚点，不无限等候、不把旧概率带入更新。
+
+```text
+实际micro  16条反向 + 16条反向 → 一次optimizer.step
+两micro loss   0.0424351692、0.0013312344；合计约0.0437664036
+采用批reward   4.1510416667；mean KL约0.0031433744
+allocated峰值  25536.17MiB ≈ 24.94GiB
+reserved峰值   27760MiB ≈ 27.11GiB（与allocated不相加）
+状态           首次更新成功，无OOM；固定参考及SFT源文件校验未变
+```
+
+这些是首个正式批次的真实值，不是额外测试，也不代表本轮最终峰值或最终效果。训练随后已进入下一policy版本的新采样。
+
+### 11.5 第二次更新OOM定位与保持16×2续跑
+
+原正式运行累计覆盖52项、生成208条，第一步完成。第二次更新在`train_once → token_logps → TRL selective_log_softmax → F.log_softmax`前向处OOM，还未optimizer.step。错误显示已有PyTorch allocated约28.74GiB、空闲195MiB，下一张量申请696MiB失败；此前首步24.94GiB只是首步峰值，不能代表任意长轨迹。
+
+固定参考未改，`checkpoint-interrupted/policy`和AdamW状态保存成功。policy指纹为`16311db08a7c9a121e42f35b973eba259ab406c93273bb220063c6a461e2fdf6`；参考指纹仍为`9ce3055acc1608beed5172ac79f402e65daabe3c821877344792d01ee44d3c97`。旧目录的`failure.json/md`与完整traceback保留。
+
+修复层级落在LM head概率计算。原路径对16条轨迹生成位置的并集投影Qwen大词表，BF16 log-softmax反向需要保留多个大矩阵。新路径沿用本机Transformers Qwen2的decoder与lm_head分层，完整16条上下文仍参与一次decoder前向，只抽每条实际生成位置；每128个生成token投影完整词表，FP32归一化，再用PyTorch非重入checkpoint重算head。未截断上下文、未删监督token、未改变reward/优势/KL/32条全局分母。概率精度从原BF16升为FP32，不能宣称逐bit相同；old/current/reference均使用同一新路径。源码依据为本机官方`modeling_qwen2.py:449–463`和TRL `utils.py:1486–1518`。
+
+```text
+恢复首步policy + AdamW状态
+  ↓ 恢复52项覆盖、采样反馈、候选预算与首步真实曲线
+丢弃第二步未提交的旧候选，新policy重新采样
+  ↓ 完整micro16 decoder → 每128真实生成token计算词表概率并重算
+micro16 + micro16 → 一次step；500池与预算上限仍按累计量计
+```
+
+续跑配置为`full_resume_config.json/md`，原`full_config.json`保留初始起点。新目录为`/root/autodl-tmp/training_runs/10-5_grpo/full500-resume-20261005T181501989146Z/`；训练PID24357，启动UTC2026-10-05 18:15:01（北京时间10月6日02:15:01）。`resume_manifest.json/md`记录来源与已完成step；`initialization.json`核对中断policy指纹及原参考完全一致。页面PID22658不变，自动跟随active_run切换到新目录。
+
+这是定位后明确修改代码并续跑，没有加测试任务，也没有自动降低micro。续跑已开始生成第53项之后的新轨迹；是否完全避免后续OOM，以及最终效果，仍看后续正式运行结果，不提前承诺。
+
+续跑首个实际更新已经完成（累计step2），证据为新目录`windows/window-001/update_report.json/md`与两条micro loss。此时累计覆盖80项、生成320条，新增28个候选组内选8个G4，采用6个informative组；完整32轨迹更新成功，参考校验未变。
+
+```text
+累计更新       2（首个原运行更新 + 一个续跑更新）
+续跑micro      16 + 16，2次backward，1次step
+续跑首批loss   −0.0005235374；mean KL约0.0042508560
+续跑首批reward 3.6197916667
+分配峰值       13842.15MiB ≈ 13.52GiB
+预留峰值       15398MiB ≈ 15.04GiB
+当前状态       running，继续后续任务；固定200评测尚未启动
+```
+
+这个显存值是新概率路径在续跑首个采用批上的正式测量，不能声称与原OOM批的轨迹完全相同，也不能保证后续任意轨迹都不OOM。已经验证两micro与实际step完成，不把候选生成完成当作训练更新完成。

@@ -50,6 +50,8 @@ class LiveProgress:
         self.run_dir = Path(run_dir)
         self.started = time.monotonic()
         self.state = {"status": "starting", "phase": "loading", "pid": os.getpid(), "process_identity": process_identity(os.getpid()), "started_at": utc_now(), "run_id": self.run_dir.name, "tasks_completed": 0, "tasks_total": config["train_tasks"], "trajectories_completed": 0, "trajectories_total": config["train_tasks"] * config["num_generations"], "groups_scored": 0, "global_step": 0, "max_steps": config["train_tasks"] // config["groups_per_update"], "optimizer_updates": 0, "evaluation_completed": 0, "evaluation_total": config["test_tasks"], "error": None, "recent_rewards": []}
+        if config.get("training_entry") == "train_full.py":
+            self.state.update(max_steps=config["max_updates"], candidate_groups=0, candidate_budget=config["candidate_group_budget"], trajectories_total=config["candidate_group_budget"] * config["num_generations"], selected_trajectories=0, skipped_windows=0)
         helpers.atomic_text(self.run_dir / "metrics.md", "# metrics.jsonl 中文说明\n\n每个更新批次的真实奖励、优势信号、loss/KL、显存和耗时；评测条目另存。\n")
         self.update()
 

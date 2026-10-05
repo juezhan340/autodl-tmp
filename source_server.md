@@ -222,3 +222,43 @@ Batch      micro16、累计1；rollout仍4路；未另做GPU冒烟，不自动�
 第一阶段训练现已完成：100任务、400轨迹、25次实际optimizer更新，无OOM；25个更新批次合计803.484秒，均值32.139秒，最长完整采样序列2721 token。最终分配峰值25480.26MiB、预留27800MiB（24.88/27.15GiB），固定参考与SFT源文件保持不变。`checkpoint-stage1/policy/`及`training_report.json/md`已落盘，原固定200评测已自动开始。最终评测状态与结果看实时状态和`evaluation/comparison.json`，不要把这里的启动记录当作评测完成证明。
 
 后续200评测已完成：C+D6完整成功179/200（89.5%），已有epoch3为176/200（88%）；6题改善、3题退步，无待审或D6系统失败。原D6审查108条、324张合法票，原始评测轨迹指纹未变。结果位于同目录`evaluation/comparison.json/md、grpo_summary.json/md、reviewed_trajectories.jsonl/md`。训练进程自然结束，6008页面仍运行并显示completed；不自动启动第二阶段。
+
+### 8.2 用户批准直接启动：全500任务池反馈采样，16×2
+
+```text
+方案先写   第12文档第11节；随后实现并直接启动，无新增测试或冒烟
+配置入口   training/10-5_grpo/{full_config.json,train_full.py,sampler.py}，均配中文md
+启动UTC    2026-10-05T18:04:54.545052+00:00；北京时间2026-10-06 02:04:54
+运行目录   training_runs/10-5_grpo/full500-20261005T180454543706Z/
+训练进程   PID22635，独立会话；stdout/stderr写同目录train.log
+页面进程   PID22658，独立6008只读；启动身份仍由services元数据核对
+起点       第一阶段最终GRPO policy与AdamW状态；KL参考仍SFT epoch3
+数据       全train500，剩余400先覆盖、旧100重新生成；不使用val/test训练
+更新       8完整组×G4=32条；micro16累计2；四路rollout
+预算       最多1500候选组、64次实际更新；全同分窗跳过，全500覆盖后才正常结束
+日志       metrics.jsonl/md、training_status.json/md、sampler_state.json/md
+证据       candidates/和windows/；每组真实采样/重放/复核/奖励/优势、每批loss/KL/显存
+保存       checkpoint-update032、checkpoint-coverage500、checkpoint-full500均保留
+异常       failure.json/md；已有更新时checkpoint-interrupted，不自动降micro
+评测       训练成功后原200任务greedy、现行A内嵌few-shot、原D6三票
+访问       http://127.0.0.1:6008
+公网       https://uu753393-981f-3f635753.westd.seetacloud.com:8443
+```
+
+这是已启动记录，最终成功率/耗时以本次运行产物为准，不提前声称收敛或效果提升。旧第一阶段目录与固定SFT文件不覆盖。
+
+后续实际：第二次更新在大词表softmax前向OOM，原正式目录保留首步及`checkpoint-interrupted`、`failure.json`，训练PID22635已退出。已明确修复LM head分块/重算并续跑，micro16累计2不变，不新增测试。
+
+```text
+当前配置   training/10-5_grpo/full_resume_config.json/md
+当前运行   training_runs/10-5_grpo/full500-resume-20261005T181501989146Z/
+当前训练   PID24357；UTC2026-10-05 18:15:01，北京时间2026-10-06 02:15:01
+恢复内容   首步policy/AdamW、52项覆盖/采样反馈/累计预算；未提交旧轨迹丢弃
+显存修复   完整micro16 decoder；真实生成token的LM head按128分块并checkpoint重算
+当前页面   PID22658、6008地址不变；自动跟随active_run
+日志位置   新目录train.log、metrics.jsonl/md、training_status.json/md和resume_manifest.json/md
+```
+
+续跑policy指纹与原中断checkpoint一致，固定参考仍SFT epoch3。首个运行的OOM如实记录，后续峰值和训练状态以新运行日志为准。
+
+续跑首个实际更新已完成，累计step2、覆盖80/500、生成320条；采用6个有差异任务组，micro16反向两次后一次step。该续跑批峰值allocated13842.15MiB、reserved15398MiB（13.52/15.04GiB），无OOM。训练继续，200评测尚未启动；这些是首批证据而非最终峰值/效果。

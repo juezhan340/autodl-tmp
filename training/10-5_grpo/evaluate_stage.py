@@ -38,7 +38,7 @@ def summarize(rows, original):
 def run_evaluation(config, run_dir, adapter, progress):
     """先完成200条greedy环境轨迹，再并发原D6评审；不在评测中更新参数。"""
     root = Path(run_dir) / "evaluation"
-    output = root / "grpo_stage1"
+    output = root / config.get("evaluation_name", "grpo_stage1")
     root.mkdir(parents=True, exist_ok=True)
     test = read_jsonl(Path(config["sft_data"]) / "test_scenarios.jsonl")
     baseline_root = Path(config["baseline_review"])
@@ -94,7 +94,11 @@ def run_evaluation(config, run_dir, adapter, progress):
     result = summarize(reviewed, read_json(output / "summary.json"))
     write_json(root / "grpo_summary.json", result)
     baseline = summarize(baseline_rows, baseline_summary)
-    comparison = {"status": "completed" if not result["pending_semantic_total"] else "completed_with_pending", "test_tasks": 200, "models": {"SFT epoch3": baseline, "GRPO stage1": result}, "success_rate_change": result["full_success_rate"] - baseline["full_success_rate"], "improved_tasks": sum(old["final_success"] is not True and new["final_success"] is True for old, new in _align(baseline_rows, reviewed)), "regressed_tasks": sum(old["final_success"] is True and new["final_success"] is False for old, new in _align(baseline_rows, reviewed)), "raw_grpo_file_unchanged": file_sha256(output / "trajectories.jsonl") == original_hash, "semantic_verdicts": dict(Counter(row.get("d6") for row in reviewed))}
+    comparison = {"status": "completed" if not result["pending_semantic_total"] else "completed_with_pending", "test_tasks": 200, "models": {"SFT epoch3": baseline, config.get("stage_label", "GRPO stage1"): result}, "success_rate_change": result["full_success_rate"] - baseline["full_success_rate"], "improved_tasks": sum(old["final_success"] is not True and new["final_success"] is True for old, new in _align(baseline_rows, reviewed)), "regressed_tasks": sum(old["final_success"] is True and new["final_success"] is False for old, new in _align(baseline_rows, reviewed)), "raw_grpo_file_unchanged": file_sha256(output / "trajectories.jsonl") == original_hash, "semantic_verdicts": dict(Counter(row.get("d6") for row in reviewed))}
+    if config.get("previous_stage_run"):
+        previous = read_json(Path(config["previous_stage_run"]) / "evaluation/grpo_summary.json")
+        comparison["models"]["GRPO stage1"] = previous
+        comparison["success_rate_change_from_stage1"] = result["full_success_rate"] - previous["full_success_rate"]
     if not comparison["raw_grpo_file_unchanged"]:
         raise ValueError("raw evaluation trajectories changed during D6")
     write_json(root / "comparison.json", comparison)

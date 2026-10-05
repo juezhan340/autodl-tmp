@@ -11,7 +11,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from runtime import HERE, REPO_ROOT, annotate_json_tree, digest, file_sha256, load_config, read_jsonl, write_json, write_jsonl
+from runtime import HERE, REPO_ROOT, annotate_json_tree, digest, file_sha256, load_config, read_json, read_jsonl, write_json, write_jsonl
 from live import LiveProgress, utc_now
 from model_math import activate, adapter_digest, load_model
 from rollout import BatchService, HFBackend, generate_group, pack_calls
@@ -53,7 +53,7 @@ def reward_statistics(rows, evidence, scores, advantages, generations):
 
 
 def save_checkpoint(model, tokenizer, optimizer, run_dir, config, progress, name, selection, reference_hash):
-    """只在阶段结束或非零更新后异常时保存可审计检查点，不逐批保存大权重。"""
+    """保存指定里程碑并保留已有索引，不逐批保存大权重。"""
     import torch
     destination = Path(run_dir) / name
     model.save_pretrained(destination, selected_adapters=["policy"])
@@ -61,7 +61,11 @@ def save_checkpoint(model, tokenizer, optimizer, run_dir, config, progress, name
     torch.save({"optimizer": optimizer.state_dict(), "torch_rng": torch.get_rng_state(), "cuda_rng": torch.cuda.get_rng_state_all(), "python_rng": random.getstate()}, destination / "training_state.pt")
     write_json(destination / "stage_state.json", {"config_sha256": digest(config), "selection_sha256": digest(selection), "global_step": progress.state["global_step"], "optimizer_updates": progress.state["optimizer_updates"], "reference_sha256": reference_hash, "policy_sha256": adapter_digest(model, "policy"), "saved_at": utc_now(), "automatic_resume_supported": False})
     annotate_json_tree(destination)
-    write_json(Path(run_dir) / "checkpoint_index.json", [{"name": name, "adapter": str(destination / "policy"), "global_step": progress.state["global_step"], "optimizer_updates": progress.state["optimizer_updates"]}])
+    index_path = Path(run_dir) / "checkpoint_index.json"
+    index = read_json(index_path) if index_path.exists() else []
+    index = [row for row in index if row["name"] != name]
+    index.append({"name": name, "adapter": str(destination / "policy"), "global_step": progress.state["global_step"], "optimizer_updates": progress.state["optimizer_updates"]})
+    write_json(index_path, index)
     return destination / "policy"
 
 

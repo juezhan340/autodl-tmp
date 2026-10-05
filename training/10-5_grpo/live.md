@@ -1,5 +1,7 @@
 # live.py 中文说明
 
+2026-10-06：500池正式配置用`max_updates=64`作更新上限，并单独记录候选预算1500、最多生成6000轨迹、已采用轨迹及跳过窗口。覆盖500项与复访生成数分开，所有值由训练主进程原子写`training_status.json/md`，不按500/8冒充实际step。
+
 职责：训练主进程是状态和指标的唯一写入者。`LiveProgress.update`原子写`training_status.json/md`，`log`追加真实`metrics.jsonl`并更新快照。页面每3秒只读，训练不依赖浏览器或对话。
 
 ```text

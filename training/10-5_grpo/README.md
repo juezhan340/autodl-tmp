@@ -1,6 +1,6 @@
 # 10-5 GRPO落地与冒烟
 
-详细规格与实测见[第12文档](../../newdoc/1004推进文档/12_GRPO落地设计_轨迹预处理奖励判定与4x4冒烟.md)。历史micro2冒烟保留；用户已批准100任务第一阶段，正式配置micro16累计1，完成后自动评测原固定200任务。未启动500任务完整训练。
+详细规格与实测见[第12文档](../../newdoc/1004推进文档/12_GRPO落地设计_轨迹预处理奖励判定与4x4冒烟.md)。历史micro2冒烟与100任务第一阶段保留；第一阶段最终179/200。本轮已直接启动500任务池正式反馈采样，micro16累计2、32条一次更新，结束自动评测原200任务。
 
 ```text
 runtime / config    读写、指纹、配置校验与中文产物说明
@@ -15,6 +15,7 @@ smoke               CPU校验 / GPU一次更新；显式确认入口
   evaluate_stage      原200任务greedy + 原D6；对照已有epoch3
   live / dashboard_server / dashboard   独立6008只读监控
   start               独立会话启动训练/页面；显式双确认
+  full_config / train_full / sampler    全500覆盖、反馈复访、同policy选8组、32条更新
   browser_verify / test_stage           页面检查与第一阶段CPU回归
 ```
 
@@ -51,3 +52,24 @@ https://uu753393-981f-3f635753.westd.seetacloud.com:8443
 第一阶段100任务训练已经完成，400轨迹、25次实际更新、无OOM；分配峰值24.88GiB、预留峰值27.15GiB。最终模型保存到上述运行目录`checkpoint-stage1/policy/`。原固定200任务评测已自动开始，完成结果会出现在同一页面与`evaluation/comparison.json`。
 
 最终200评测已完成、无待审：SFT epoch3为176/200（88%），GRPO第一阶段179/200（89.5%）；逐题6改善、3退步。页面completed并保留全部训练曲线、checkpoint和结果。固定参考与SFT原文件不变，原始评测轨迹未被D6补审改写。小幅提升不等于已证明收敛或所有类别都改善，详见第12文档末尾。
+
+2026-10-06正式500运行已启动，不追加冒烟或规模测试：
+
+```text
+配置       full_config.json；入口train_full.py；采样器sampler.py
+运行       /root/autodl-tmp/training_runs/10-5_grpo/full500-20261005T180454543706Z/
+后台PID    训练22635；页面22658（实际存活按services元数据启动身份核对）
+起点       第一阶段最终policy和AdamW状态；KL参考仍固定SFT epoch3
+更新       8组×G4=32，micro16累计2；rollout仍四路
+预算       全500优先覆盖，最多1500候选组、64实际更新；不是64步效果承诺
+日志       train.log、metrics.jsonl/md、training_status.json/md、sampler_state.json/md
+证据       candidates/逐组轨迹/证据/奖励；windows/采用组/old-ref概率/微批loss
+保存       第32次更新、覆盖500、结束；异常后已有更新保存中断权重
+评测       完成训练后原200 test，原C+D6，页面同时保留epoch3与stage1对照
+```
+
+正式启动命令为`start.py train --config training/10-5_grpo/full_config.json --confirm-stage-training --confirm-api-review`。正常运行中不要重复执行；本次已经后台启动，日志不绑定对话。此处启动记录不代表训练已结束。
+
+随后第二次更新softmax OOM，首步与失败日志已保留。已直接从中断checkpoint续跑，当前入口配置为`full_resume_config.json`、训练PID24357、目录`full500-resume-20261005T181501989146Z`。保留micro16累计2，完整decoder不变，只把LM head的真实生成token概率改为128token分块与checkpoint重算；恢复52项覆盖和反馈，不复用未提交轨迹。6008页面自动切换新运行。详见12文档11.5节。
+
+续跑首批已完成：累计step2、覆盖80项、micro16×累计2实际执行；该批allocated/reserved峰值13.52/15.04GiB。训练仍在后台，实际最新状态以6008页面或运行状态文件为准。

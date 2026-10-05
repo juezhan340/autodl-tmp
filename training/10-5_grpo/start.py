@@ -23,7 +23,10 @@ def build_command(service, config_path, port, run_dir=None, confirmed=False, api
         raise ValueError("unknown service")
     if service == "train" and (not confirmed or not api_confirmed):
         raise ValueError("stage training and API review require explicit confirmations")
-    entry = HERE / ("dashboard_server.py" if service == "dashboard" else "run_stage.py")
+    training_entry = load_config(config_path).get("training_entry", "run_stage.py")
+    if training_entry not in ("run_stage.py", "train_full.py"):
+        raise ValueError("unknown training entry")
+    entry = HERE / ("dashboard_server.py" if service == "dashboard" else training_entry)
     command = [sys.executable, "-u", str(entry), "--config", str(config_path)]
     if service == "dashboard":
         command.extend(["--port", str(port), "--host", "0.0.0.0"])
@@ -53,7 +56,7 @@ def launch(service, config_path, port=6008, confirmed=False, api_confirmed=False
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
             run_dir = root / (config["stage_name"] + "-" + stamp)
             run_dir.mkdir()
-            write_json(root / "active_run.json", {"run_dir": str(run_dir), "created_at": utc_now()})
+            write_json(root / "active_run.json", {"run_dir": str(run_dir), "config_path": str(config_path), "created_at": utc_now()})
         command = build_command(service, config_path, port, run_dir, confirmed, api_confirmed)
         log_path = run_dir / "train.log" if run_dir else services / "dashboard.log"
         environment = dict(os.environ)

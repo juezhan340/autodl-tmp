@@ -49,8 +49,16 @@ def load_config(path=None):
         raise ValueError("trajectory count does not equal micro_batch * accumulation")
     if config["rollout_parallel"] > config["num_generations"] or config["num_generations"] % config["rollout_parallel"]:
         raise ValueError("rollout_parallel must divide num_generations")
-    if config["groups_per_update"] != len(config["smoke_categories"]):
+    if config.get("training_entry", "run_stage.py") != "train_full.py" and config["groups_per_update"] != len(config["smoke_categories"]):
         raise ValueError("one smoke task is required per configured category")
+    if config.get("training_entry") == "train_full.py":
+        for key in ("train_tasks", "max_updates", "candidate_group_budget", "candidate_window", "target_informative_groups"):
+            if type(config[key]) is not int or config[key] < 1:
+                raise ValueError(f"invalid formal training integer: {key}")
+        if config["candidate_group_budget"] < config["train_tasks"] or config["candidate_window"] < config["groups_per_update"]:
+            raise ValueError("formal budget cannot cover the task pool or one complete update")
+        if config["target_informative_groups"] > config["groups_per_update"] - 2:
+            raise ValueError("informative target must leave two anchor groups")
     for key in ("temperature", "learning_rate", "beta", "epsilon"):
         value = config[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):

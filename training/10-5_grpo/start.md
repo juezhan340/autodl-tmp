@@ -1,5 +1,7 @@
 # start.py 中文说明
 
+2026-10-06：配置可白名单选择`run_stage.py`或`train_full.py`；正式500使用`--config training/10-5_grpo/full_config.json`，仍要求训练/API两个显式确认。active_run记录配置路径，后台`start_new_session=True`与独立train.log保留；不会自动测试、降批或重跑。
+
 职责：沿用既有SFT独立会话启动模式，启动第一阶段GRPO或6008监控。训练与页面各自有PID、启动身份、文件锁和日志，不依赖对话、SSH或浏览器；服务器关机会中断。
 
 ```text

@@ -44,12 +44,16 @@ def snapshot(config, gpu):
     root = Path(config["output_root"])
     active = read_optional(root / "active_run.json", {})
     run = Path(active["run_dir"]) if active.get("run_dir") else None
+    if run:
+        config = read_optional(run / "run_config.json", {}).get("config", config)
     status = read_optional(run / "training_status.json", {"status": "not_started", "phase": "waiting"}) if run else {"status": "not_started", "phase": "waiting"}
     status = dict(status)
     if status["status"] in ("starting", "running") and process_identity(status.get("pid")) != status.get("process_identity"):
         status.update(status="interrupted", error="训练进程已退出，保留最后状态。")
     public = {key: value for key, value in status.items() if key not in ("pid", "process_identity")}
-    return {"server_time": utc_now(), "config": {key: config[key] for key in ("micro_batch", "accumulation", "num_generations", "rollout_parallel", "groups_per_update", "train_tasks", "test_tasks", "max_length", "learning_rate", "beta")}, "training": public, "metrics": read_metrics(run / "metrics.jsonl") if run else [], "checkpoints": read_optional(run / "checkpoint_index.json", []) if run else [], "evaluation": read_optional(run / "evaluation/comparison.json", {}) if run else {}, "gpu": gpu}
+    public_config = {key: config[key] for key in ("micro_batch", "accumulation", "num_generations", "rollout_parallel", "groups_per_update", "train_tasks", "test_tasks", "max_length", "learning_rate", "beta")}
+    public_config["stage_label"] = config.get("stage_label", "第一阶段 · 100任务")
+    return {"server_time": utc_now(), "config": public_config, "training": public, "metrics": read_metrics(run / "metrics.jsonl") if run else [], "checkpoints": read_optional(run / "checkpoint_index.json", []) if run else [], "evaluation": read_optional(run / "evaluation/comparison.json", {}) if run else {}, "gpu": gpu}
 
 
 def make_handler(config):
