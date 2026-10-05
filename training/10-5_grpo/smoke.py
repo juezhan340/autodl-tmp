@@ -61,7 +61,7 @@ def reset_memory():
     torch.cuda.reset_peak_memory_stats()
 
 
-def precompute_logps(model, packed, tokenizer, config):
+def precompute_logps(model, packed, tokenizer, config, require_initial_equal=True):
     """采样policy未更新时分小批算旧概率与固定SFT参考概率，缓存到CPU。"""
     import torch
     old = [torch.zeros(len(row["input_ids"]) - 1) for row in packed]
@@ -82,18 +82,19 @@ def precompute_logps(model, packed, tokenizer, config):
             reference[start + index][positions] = fixed[index][active].cpu()
         del sampled, fixed, batch
     activate(model, "policy")
-    if max_delta > 1e-4:
+    if require_initial_equal and max_delta > 1e-4:
         raise ValueError("initial policy and fixed SFT probabilities differ")
     return old, reference, max_delta
 
 
-def train_once(model, packed, old, reference, advantages, tokenizer, config, output):
+def train_once(model, packed, old, reference, advantages, tokenizer, config, output, optimizer=None, save_checkpoint=True):
     """16轨迹分8个micro反向累计，只执行一次优化器step且不保留16套计算图。"""
     import torch
     activate(model, "policy")
     model.train()
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
-    optimizer = torch.optim.AdamW(parameters, lr=config["learning_rate"], weight_decay=0.0)
+    if optimizer is None:
+        optimizer = torch.optim.AdamW(parameters, lr=config["learning_rate"], weight_decay=0.0)
     optimizer.zero_grad(set_to_none=True)
     denominator = sum(row["sampled_tokens"] for row in packed)
     records = []
@@ -120,9 +121,10 @@ def train_once(model, packed, old, reference, advantages, tokenizer, config, out
     norm = torch.nn.utils.clip_grad_norm_(parameters, 1.0)
     if not torch.isfinite(norm):
         raise ValueError("gradient norm is not finite")
-    informative = any(abs(value) > 1e-10 for value in advantages)
+    informative = float(norm) > 1e-12
     if informative:
         optimizer.step()
+    if informative and save_checkpoint:
         destination = output / "smoke_adapter"
         model.save_pretrained(destination, selected_adapters=["policy"])
         tokenizer.save_pretrained(destination / "policy")
@@ -131,7 +133,7 @@ def train_once(model, packed, old, reference, advantages, tokenizer, config, out
     optimizer.zero_grad(set_to_none=True)
     model.eval()
     write_jsonl(output / "update_metrics.jsonl", records, "一次更新中的micro损失及KL统计；无额外手工再除累计次数。")
-    return {"optimizer_updates": int(informative), "gradient_norm_before_clip": float(norm), "sampled_policy_tokens": denominator, "micro_batches": len(records), "loss_sum": sum(row["loss"] for row in records), "mean_kl": sum(row["kl_sum"] for row in records) / denominator, "initial_logprob_delta_max": max(row["initial_logprob_delta"] for row in records), "all_groups_tied": not informative}
+    return {"optimizer_updates": int(informative), "gradient_norm_before_clip": float(norm), "sampled_policy_tokens": denominator, "micro_batches": len(records), "loss_sum": sum(row["loss"] for row in records), "mean_kl": sum(row["kl_sum"] for row in records) / denominator, "clip_fraction": sum(row["clip_tokens"] for row in records) / denominator, "initial_logprob_delta_max": max(row["initial_logprob_delta"] for row in records), "all_groups_tied": not any(abs(value) > 1e-10 for value in advantages)}
 
 
 def run_smoke(config, output, api_confirmed):

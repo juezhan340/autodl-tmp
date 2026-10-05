@@ -14,7 +14,9 @@
 
 `run_smoke`检查GPU与API确认，加载两套相同SFT adapter，生成16条新轨迹，完成重放、语义评审、奖励、组内优势和原始token打包。old与ref按micro重算并保存CPU；首次policy/ref概率必须一致。各阶段同步GPU并重置显存峰值，allocated/reserved分别记录。
 
-`train_once`做8次micro反向，再梯度裁剪和一次AdamW更新；每个micro已按整次token总数归一，不额外再除8。同分无信号时不执行step或假报权重更新。更新后核对固定参考及原始SFT文件均未变化。冒烟adapter只保存到新运行目录，不能替换selected_adapter。这里只是最小执行闭环，不能直接恢复成完整训练。
+`train_once`按配置执行micro反向，再梯度裁剪和一次AdamW更新；每个micro已按整次token总数归一，不额外除累计次数。实际梯度为零才跳过step；即使同组reward相同，后续非零KL仍可以约束漂移。默认保存独立smoke_adapter，不覆盖selected_adapter。
+
+第一阶段由`run_stage.py`调用这两个已验证计算函数：传入持续存在的optimizer并关闭逐更新大权重保存，避免重置Adam状态；`precompute_logps(require_initial_equal=False)`允许训练后的policy与固定参考不同。首次仍要求相等。原冒烟CLI及旧结果不变，正式16×1使用独立stage1_config。
 
 ```bash
 /root/autodl-tmp/sft-venv/bin/python training/10-5_grpo/smoke.py --mode check

@@ -64,7 +64,7 @@ def valid_review(item):
     return type(item.get("truthful")) is bool and type(item.get("complete_and_truthful")) is bool and item["truthful"] == (sum(vote["truthful"] for vote in votes) >= 2) and item["complete_and_truthful"] == (sum(vote["truthful"] and vote["answers_request"] for vote in votes) >= 2)
 
 
-def judge_rows(rows, output, env_path, workers):
+def judge_rows(rows, output, env_path, workers, progress_callback=None):
     """对相同输入去重、恢复已完成缓存；未审项不能变成0分。"""
     output = Path(output)
     client = CountedJudgeClient(env_path, output / "api")
@@ -92,6 +92,8 @@ def judge_rows(rows, output, env_path, workers):
             key = futures[future]
             results[key] = future.result()
             write_json(output / "cache" / f"{key}.json", results[key])
+            if progress_callback:
+                progress_callback({"completed": len(results), "total": len(indexed), "http_attempts": client.http_attempts, "errors": sum(item["status"] != "reviewed" for item in results.values())})
     write_json(output / "judge_manifest.json", {**protocol, "rows": len(rows), "unique_inputs": len(indexed), "jobs": len(jobs), "logical_votes": 3 * len(jobs), "http_attempts": client.http_attempts, "pending_unique": sum(item["status"] != "reviewed" for item in results.values())})
     annotate_jsonl_tree(output / "api")
     return [results[key] for key in keys]

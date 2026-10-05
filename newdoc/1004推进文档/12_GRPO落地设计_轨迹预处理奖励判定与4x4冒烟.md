@@ -4,6 +4,10 @@
 
 本轮已执行CPU重放校验和一次GPU参数更新，未启动500任务完整GRPO训练。5090当前可用，四路rollout没有自动降为一或二路。所谓“落地”在本轮指奖励证据、采样token、参考模型和单次更新闭环；完整多轮训练、断点恢复及监控服务还没有实现。
 
+后续批准附记：用户已要求直接启动100任务第一阶段、micro16累计1，不追加GPU冒烟；连续训练入口和6008监控已补齐并启动，见本文第9节。前面micro2的测量保留为历史证据，不能与正式阶段混淆。500任务完整训练和自动恢复仍未启动/实现。
+
+执行进度补充：100任务第一阶段训练已完成，400条新轨迹、25次实际更新，无OOM；阶段checkpoint已保存，原固定200任务评测自动开始。最终评测结论以运行产物为准，本文件未提前写效果提升。
+
 ## 1 当前到底做到哪一步
 
 ```text
@@ -341,3 +345,54 @@ PyTorch：allocated为张量用量、reserved为缓存分配器管理量
 ```
 
 当前配置指纹为`9c06d3b1dcd824e8aec211eee4b0901dd94d54af1098c7c4a23768065375cb27`，结尾审查提示词指纹为`bc0ba88d95b63037b0baef65e67b21a752e512e65032f512bb1b729fda332dc1`。后续改权重或改提示词需更新指纹与缓存口径，不能悄悄沿用不同版本的分数。
+
+## 9 用户批准后：100任务16×1正式启动
+
+正式配置单独保存为`training/10-5_grpo/stage1_config.json`，旧`config.json`继续记录micro2累计8冒烟。此次原train选五类各20，抽样后混合，校验100个group唯一且没有validation/test重叠。每个任务采样四条，仍是四个任务组进入一次更新；训练micro16累计1，25批次完成400条轨迹。启动前只做CPU代码检查，没有额外GPU预测试。
+
+```text
+start.py train --confirm-stage-training --confirm-api-review
+  -> 独立会话运行run_stage.py，PID与启动身份落盘
+  -> 共享一份AdamW跨25批次，old每批按新policy重算，参考保持epoch3
+  -> 逐批只保存轨迹、证据、reward、优势、概率与指标
+  -> 阶段结束checkpoint-stage1：adapter + tokenizer + optimizer + RNG + 任务指纹
+  -> 释放训练模型，复用原SFT evaluate.py跑固定200任务greedy
+  -> 原D6模板三票，最多100任务并发；对照已有epoch3的176/200
+  -> 训练与评测都成功后页面completed
+
+OOM / 系统异常 / 非有限loss：
+  -> failure.json、train.log、页面failed
+  -> 不自动降micro，不隐式重跑
+  -> 已有更新时保留一次中断快照；当前无自动resume入口
+```
+
+第一阶段实际启动目录为`/root/autodl-tmp/training_runs/10-5_grpo/stage1-100-20261005T160227906618Z/`。启动记录UTC为`2026-10-05T16:02:27.907962+00:00`，训练PID7783，页面PID7001；长期存活请核对services元数据中的启动身份，不能只看静态PID。训练独立于对话、SSH和页面，实例关机仍会中断。
+
+首批已经验证一次micro16反向、一次真实更新，无OOM，reward均值4.03125、loss=-0.027024、KL=0，耗时32.604秒，分配峰值16.87GiB、预留18.68GiB。第二批KL已经非零，policy允许偏离固定参考；后续较长批次峰值已增至23.82/26.49GiB，说明显存会随完整历史及采样位置并集变化。最终峰值要等整个阶段完成，不拿某一个批次当最终上限。
+
+监控每3秒读取真实状态，展示reward及分项、成功/虚假finish/严重违规/预算、同分组比例、loss/KL/梯度、学习率/裁剪、吞吐/耗时、GPU当前用量和两种PyTorch峰值、checkpoint和200任务评测对照。页面成功率标注“奖励定义、当前批次”，不冒充原C+D6最终评测。训练奖励审查仍用r2；最终评测继续原D6，二者用途不同。
+
+```text
+本机：http://127.0.0.1:6008
+公网：https://uu753393-981f-3f635753.westd.seetacloud.com:8443
+```
+
+旧平台域名已404，新URL由本机`AutoDLService6008URL`取得并验证页面及healthz均200。页面桌面1440、手机390、窄屏360、宽屏1920检查通过，无整页横向溢出、关键文本越界或区段重叠，两个canvas有真实曲线像素，动态轮询和文本注入防护通过。截图在仓库外monitor_checks，当前图像查看工具不支持输入，未声明人工看图验收。完整CPU回归149 passed，唯一警告来自原微型PEFT夹具。
+
+现行A内嵌示例在训练和评测中均保留，没有添加另一套few-shot。评测前核对200个Scenario完全相同，并验证已有epoch3对照adapter的文件SHA与本次训练起点一致。后续运行状态与结果以该目录`training_status.json、training_report.json、evaluation/comparison.json`为准；本文记录启动事实，不提前填写完成或效果提升。
+
+### 9.1 第一阶段训练完成记录
+
+100任务、400轨迹和25个更新批次已全部完成，25次optimizer.step均实际执行，无OOM；参考adapter与SFT原文件不变。最终checkpoint位于上述运行目录`checkpoint-stage1/policy/`，optimizer及随机状态在同级`training_state.pt`，元数据为`stage_state.json/md`。
+
+```text
+25个更新批次合计耗时：803.484秒，约13分23秒
+平均每批：           32.139秒
+最长完整采样序列：   2721 token（配置3072，仍不是3072极限压力测量）
+allocated最终峰值：  25480.26MiB = 24.88GiB
+reserved最终峰值：   27800MiB = 27.15GiB
+训练报告：           training_report.json/md
+当前后续：           原固定200任务评测已自动开始
+```
+
+批次合计时间包含每批rollout、奖励、概率重算与反向，但不包含最初模型载入、最后保存和200任务评测，不能当作全流程总耗时。显存为25批次各阶段测量的最大值，两列仍不能相加。当前完成的是训练，评测结果另看实时页面及comparison产物。

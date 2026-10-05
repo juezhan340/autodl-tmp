@@ -191,4 +191,32 @@ API评审    同目录finish_review/，16个输入、48票/48次HTTP尝试，无
 状态       冒烟已结束，原SFT与固定参考不变，完整500任务GRPO未启动
 ```
 
-运行产物均放在仓库外，JSON/JSONL配同名中文说明。GPU入口是`smoke.py --mode smoke --confirm-smoke --confirm-api-review`，仅执行一次更新；没有完整train入口、断点恢复或GRPO展示服务。本次生成线程已关闭，结束后GPU无遗留训练进程。
+运行产物均放在仓库外，JSON/JSONL配同名中文说明。冒烟完成当时，GPU入口为`smoke.py --mode smoke --confirm-smoke --confirm-api-review`，仅一次更新，尚无连续训练/监控；后续用户批准的100任务入口及页面见8.1。历史冒烟生成线程已关闭。
+
+### 8.1 后续批准：100任务第一阶段，16×1正式训练
+
+```text
+正式配置   10-04/training/10-5_grpo/stage1_config.json及同名md
+范围       原500训练池选五类各20，共100；每任务4轨迹，共400；25更新批次
+Batch      micro16、累计1；rollout仍4路；未另做GPU冒烟，不自动降批
+启动UTC    2026-10-05T16:02:27.907962+00:00（元数据原始时间）
+训练       PID7783；独立新会话，日志不绑定SSH或对话
+运行目录   training_runs/10-5_grpo/stage1-100-20261005T160227906618Z/
+日志       同目录train.log、metrics.jsonl、training_status.json及说明
+检查点     阶段末checkpoint-stage1；每个更新只存日志和证据
+异常       已有更新时一次checkpoint-interrupted；OOM停止留档，不降micro
+评测       训练成功后原固定200，greedy、现行A内嵌示例、原D6三票
+对照       使用已有SFT epoch3固定200结果，起点权重SHA与本次一致
+页面       PID7001，0.0.0.0:6008，独立只读进程
+本机       http://127.0.0.1:6008
+新公网     https://uu753393-981f-3f635753.westd.seetacloud.com:8443
+启动身份   training_runs/10-5_grpo/services/{train,dashboard}.json及说明
+当前运行   training_runs/10-5_grpo/active_run.json及说明
+页面验证   training_runs/10-5_grpo/monitor_checks/stage1-100/
+```
+
+平台环境变量`AutoDLService6008URL`提供了新公网地址，旧`uu753393-afb3-4b7a916d`域名返回平台404，当前新域名页面及healthz均200。无需修改平台代理配置；记录URL时只读取公开域名，不输出平台token。阶段启动后的首批32.604秒，micro16分配峰值17270.72MiB、预留19124MiB；之后较长批次已到24392.45/27128MiB，不能把首批当整个阶段最终峰值，最终结果以training_report为准。
+
+本轮完整CPU回归149项通过，页面桌面/手机/窄屏/宽屏、canvas曲线像素和轮询检查通过；检查没有发起GPU训练或收费API。正式训练由上面的显式双确认入口启动，后台继续执行。
+
+第一阶段训练现已完成：100任务、400轨迹、25次实际optimizer更新，无OOM；25个更新批次合计803.484秒，均值32.139秒，最长完整采样序列2721 token。最终分配峰值25480.26MiB、预留27800MiB（24.88/27.15GiB），固定参考与SFT源文件保持不变。`checkpoint-stage1/policy/`及`training_report.json/md`已落盘，原固定200评测已自动开始。最终评测状态与结果看实时状态和`evaluation/comparison.json`，不要把这里的启动记录当作评测完成证明。

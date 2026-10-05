@@ -133,7 +133,8 @@ def run_episode(task, service, tokenizer, config, branch):
     """独立reset一个家庭，沿用A/C/B，另存group与分支标识。"""
     client = ActorClient(service, tokenizer, config)
     result = EpisodeRunner(DeepSeekPolicy(client)).run(task["scenario"])
-    return {"sample_id": task["sample_id"], "group_id": "smoke-" + task["sample_id"], "rollout_id": f"{task['sample_id']}-branch-{branch}", "category": task["category"], "scenario": task["scenario"], "record": result.record, "labels": result.labels.to_dict(), "calls": client.calls, "context_budget_exhausted": client.budget_exhausted, "infrastructure_errors": client.infrastructure_errors}
+    namespace = config.get("group_namespace", "smoke")
+    return {"sample_id": task["sample_id"], "group_id": namespace + "-" + task["sample_id"], "rollout_id": f"{task['sample_id']}-branch-{branch}", "category": task["category"], "scenario": task["scenario"], "record": result.record, "labels": result.labels.to_dict(), "calls": client.calls, "context_budget_exhausted": client.budget_exhausted, "infrastructure_errors": client.infrastructure_errors}
 
 
 def generate_group(task, service, tokenizer, config):
