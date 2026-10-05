@@ -2,6 +2,8 @@
 
 这是直接执行的500任务池正式配置，不是冒烟配置。policy继续第一阶段最终adapter，并恢复对应AdamW状态；固定参考仍为SFT epoch3。训练数据仅train500，结束用原test200评测。
 
+OOM定位后，本配置也启用`logprob_token_chunk=128`，避免之后使用正式初始入口时仍走旧的大词表常驻路径。初始policy起点保留；实际原运行的旧配置快照在原运行目录run_config.json中，不被本修改覆盖。当前已在跑的续训使用full_resume_config.json，勿重复启动。
+
 ```text
 每次更新：8组 × G4 = 32条轨迹 = micro16 × 累计2
 同时rollout：4路
