@@ -144,7 +144,61 @@ Reranker（2609.01947）：reward-based OPD 学生 1B 超过已发布的 7B RL �
    再按 RWOPD/Med-OPD 的方式做验证器加权或证据加权，避免均匀蒸馏稀释关键 token。
 ```
 
-## 6 检索式（可复现）
+## 6 各阶段指标对照表
+
+> 数字来自论文正文表格；HY-MT1.5 与 SOD 的结果以图为主，只能给摘要级数字，已单独标注。
+> "—"表示论文没有报告该阶段。不同论文指标不同，只能看同一行内部的变化。
+
+### 6.1 完整阶段对照
+
+```text
+论文/学生模型          任务与指标                未训练        SFT           OPD         RL/其他
+ATOD Qwen3-0.6B        ALFWorld+SearchQA+WebShop 6.66         —             67.73       GRPO 33.17 / ATOD 70.62（教师68.93）
+ATOD Qwen3-1.7B        同上 平均SR               15.59        —             64.91       GRPO 40.30 / ATOD 71.58（教师68.93）
+ATOD Qwen3-4B          同上 平均SR               19.24        —             68.13       GRPO 68.93 / ATOD 71.06（教师68.91）
+SSTD Qwen3-1.7B        金融 目标/通用            34.2/57.8    61.5/50.4     55.5/53.0   SSTD 59.5/55.2
+SSTD Qwen3-1.7B        医疗 目标/通用            63.2/58.1    75.8/51.7     71.8/54.3   SSTD 74.2/56.7
+SSTD Qwen3-1.7B        法律 目标/通用            69.4/59.3    82.0/53.5     77.6/55.6   SSTD 80.1/58.4
+Med-OPD Qwen3-VL-2B    医疗VQA平均               0.6375       0.6534        0.6775      Med-OPD 0.7058
+RWOPD Qwen2.5-Coder-7B NL2SVA pass@1(人/机)      25.3/21.7    70.9/83.3     77.2/85.3   GRPO 74.7/83.7 → RWOPD 78.8/87.0
+OPDSearch+ 3B          多跳QA平均                0.134        0.176         0.3655      纯RL 0.3524 / 离线SFT→RL 0.4185 / 本文 0.4402
+Reranker 1B            MAIR-11 nDCG@6            0.6972       离线KD 0.7212  —           离策略GRPO 0.7356 / GKD 0.7386 / 在策略GRPO(教师初始化) 0.7670
+LiteGUI Qwen3-VL-2B    Lite-Bench/OS-World      33.35/6.04   37.96/3.25    51.47/9.32  SFT+GRPO 42.65/3.77 → 最终+GRPO 61.76/13.24
+MemOPD 3B              长程agent F1              0.356(SFT)   0.470(MEM1-QA) 0.522      PPO 0.486
+RP-OPD Qwen2.5-3B      HealthBench/ResearchQA/RubricHub 0.567/0.567/0.620(纯RL)  SFT 0.527/0.540/0.606  RP-OPD 0.495/0.594/0.642  SFT+RL 0.612/0.743/0.682 → RP-OPD+RL 0.632/0.776/0.735
+RP-OPD Qwen2.5-7B      同上                      0.583/0.672/0.651  SFT 0.513/0.598/0.682  RP-OPD 0.582/0.614/0.705  SFT+RL 0.607/0.721/0.815 → RP-OPD+RL 0.673/0.797/0.829
+REOPOLD R1-Distill-1.5B 数学6项平均              44.4         51.5(SFT)     54.4(RKL)   GRPO 47.8 / REOPOLD 57.1
+REOPOLD Qwen2.5-VL-3B   视觉4项平均               —            45.83(SFT)    63.27(RKL)  GRPO 64.25 / REOPOLD 65.75
+GC-OPD 4B               三agent基准               —            —             OPD 24.70/53.36/29.10  GC-OPD 48.78/85.26/37.65
+MiLMMT 1B               翻译 WMT24++              —            —             OPD 77.67   RL+检查点插值 v1.0 79.01（OPD未超过，反例）
+```
+
+### 6.2 只有摘要级数字或图示的
+
+```text
+HY-MT1.5-1.8B   翻译    SFT→OPD→RL 四段管线；1.8B≈Gemini-3.0-Pro 的90%，超 Tower-Plus-72B/Qwen3-32B
+                       分阶段数字以图呈现，正文未列表
+SOD 0.6B        工具推理 OPD 逐步重加权；AIME2025 26.13%，比次优基线最高 +20.86%（摘要）
+ActFirst-OPD    多轮agent 训练提速 2.3x/1.8x/4.9x；9 个设置里 8 个成功率不输 vanilla OPD
+2609.37326      机理    从8B蒸到0.6B~4B：解题能迁移，"知道何时停"不能迁移
+2604.13016      配方    失败 OPD 可用 off-policy 冷启动修复；教师与学生思维模式需兼容
+```
+
+### 6.3 三行结论
+
+```text
+① SFT 的领域增益最大但通用能力掉得最多：SSTD 里金融 SFT 目标 34.2→61.5，
+   通用 57.8→50.4；医疗、法律同款。OPD 单独用领域学得少但通用保得住。
+
+② agent 类任务上 OPD 是"把起点抬起来"：ATOD 0.6B 从 GRPO 的 33.17 抬到 OPD 的 67.73，
+   再用 RL 收到 70.62；1.7B 同样（40.30 → 64.91 → 71.58）。
+
+③ OPD 后接 RL 普遍再加 3~5 个点，且能超过教师：
+   ATOD 三个尺寸都超对应教师；RP-OPD 比 SFT+RL 高 2~6 个点；
+   相反纯 OPD 会卡在教师水平（MiLMMT 里 OPD 77.67 没超过 RL+插值 79.01）。
+```
+
+## 7 检索式（可复现）
 
 ```text
 abs:"on-policy distillation"                                    （倒序 60 条 + 相关性排序）
