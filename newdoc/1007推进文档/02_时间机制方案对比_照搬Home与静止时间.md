@@ -150,8 +150,8 @@ GRPO
 ```text
 now        整个 episode 固定为 scenario.base_time；inspect_time 永远返回它，clock=virtual
 schedule   只写单：校验 at 与 steps，写入 episode 级预约单列表，不真正执行
-list       返回当前列表（pending / cancelled；"done"由校验结果决定）
-cancel     把单标记为 cancelled，到点什么都不会发生
+list       只列还没执行的单（{schedule_id, at}）；取消 / 已执行 / 失败的单不再下发
+cancel     取消后 list 里立刻看不到，到点什么都不会发生
 finish     表示"下单完成"；到点执行结果不由模型在本次 episode 里承担
 ```
 
