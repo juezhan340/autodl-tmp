@@ -150,7 +150,7 @@ GRPO
 
 ```text
 now        整个 episode 固定为 scenario.base_time；inspect_time 永远返回它，clock=virtual
-           （时间格式与存储口径见 3.6）
+           （时间格式与存储口径见 3.7）
 schedule   只写单：校验 at 与 steps，写入 episode 级预约单列表，不真正执行
 list       只列还没执行的单（{schedule_id, at}）；取消 / 已执行 / 失败的单不再下发
 cancel     取消后 list 里立刻看不到，到点什么都不会发生
@@ -215,16 +215,74 @@ finish     表示"下单完成"；到点执行结果不由模型在本次 episod
 代价      只是一个假设的快照，不是真的未来
 ```
 
-### 3.4 改动清单
+### 3.4 时间与记忆的数据归谁（D → C → B → A）
+
+```text
+模块   存什么                                              生命周期
+A      不存任何东西；只拿 context、输出工具调用            单次调用
+B      世界状态：设备状态 + 冻结时间 now + 预约单列表 + 记忆文本
+       并且是全部工具的宿主：observe / inspect_room / inspect_device /
+       execute_action / inspect_time / time_control / memory   单 episode / 单会话
+C      会话编排与判定：turns 记录、收取 finish、条件比对、
+       调用 B 的影子执行结算；自己不另存时间或记忆             单 episode / 会话
+D      任务真值 + 数据落盘：base_time、memory_seed、
+       expected.at / steps、due_state、轨迹文件、数据集          跨批次，写文件
+```
+
+```text
+数据流：
+  D 写任务文件（持久）
+    blueprint / task: {home, base_time, memory_seed, expected, due_state}
+        │ D5 运行时读取任务并交给 C
+        ▼
+  C 编排（不存数据）
+    reset(B, scenario) → 交互循环 → 收 finish → 结算 → 返回 record
+        │                                              │
+        ▼                                              ▼
+  B 运行时（内存，单会话）                        D5 落盘（轨迹文件，持久）
+    reset 初始化：devices   ← home 副本
+                  now       ← base_time（整个会话冻结）
+                  memory    ← memory_seed（类1 有内容，类2/3 空）
+                  schedules ← []
+        ▲
+        │ A 通过工具读写；A 不知道这些数据存在哪
+```
+
+reset 前后对照：
+
+```text
+现在 reset(scenario)
+  devices ← scenario.home 的副本
+
+以后 reset(scenario)
+  devices   ← scenario.home 的副本
+  now       ← scenario.base_time（整个会话不变）
+  memory    ← scenario.memory_seed
+  schedules ← []
+```
+
+几条规则：
+
+```text
+reset 签名不变，还是 reset(scenario)；变的是 scenario 多了字段，B_schema 同步扩展。
+reset 次数由 C 决定：单轮任务一次；多轮任务一个会话一次，轮与轮之间不 reset。
+会话结束 B 的运行时状态直接丢弃，不落盘；持久化的只有 D 的任务文件与 D5 的轨迹。
+inspect_time / time_control / memory 都是 B 的工具路由，与 execute_action 平级；
+finish 仍由 C 收；结算是 C 调 B 的影子执行，B 不改真实状态。
+```
+
+### 3.5 改动清单
 
 ```text
 B 仿真器
-  加一个 episode 级预约单存储（内存即可）+ 一个预约校验/影子执行函数；
-  现有四个家庭工具与状态引擎不动；
-  不需要时钟循环、事件队列、状态演化。
+  加三个世界状态字段（冻结时间 now / 记忆文本 / 预约单列表）+ 三个工具路由
+  （inspect_time / time_control / memory）+ 预约校验与影子执行函数；
+  reset 从 scenario 读 base_time / memory_seed 完成初始化，B_schema 同步扩展；
+  设备状态引擎与原有四个工具不动；不需要时钟循环、事件队列、状态演化。
 
 C 回合引擎
   加一个 TC6 判定器：at 正确性（与任务期望比对）+ steps 正确性 + 影子结果；
+  reset 次数由 C 控制：单轮一次、多轮每会话一次；结算时由 C 调 B 的影子执行；
   runner 循环不变（仍然单 episode、最多 10 轮、finish 收尾）；
   多轮会话是 TC7 的改造，和 TC6 无关。
 
@@ -234,11 +292,13 @@ A 策略
 
 D 数据管线
   D0 加 TC6 模板；D2 的 task 增加"时间类型（绝对/相对）+ 偏移/时刻 + steps"；
-  D4 复用同一套校验器；D5 轨迹加 schedule 字段；
+  TC7 还需要 memory_seed；TC6 可选 due_state（到点状态快照）；
+  D4 复用同一套校验器（不跑快进）；D5 轨迹加 clock / schedule / memory 快照 /
+  session_id / turn_index；
   D6 对 TC6 基本可跳过（规则可验证）。
 ```
 
-### 3.5 能测什么、测不了什么
+### 3.6 能测什么、测不了什么
 
 ```text
 能测    读时间；绝对/相对换算；单子合法性；steps 与目标是否匹配；
@@ -248,7 +308,7 @@ D 数据管线
         连续物理过程（空调开 10 分钟降 2 度）；"到点后环境自然变化"
 ```
 
-### 3.6 时间表示规格（2026-10-09 拍板）
+### 3.7 时间表示规格（2026-10-09 拍板）
 
 ```text
 格式        YYYY-MM-DD HH:MM，家庭时区，不带时区后缀
