@@ -269,6 +269,12 @@ reset 次数由 C 决定：单轮任务一次；多轮任务一个会话一次�
 会话结束 B 的运行时状态直接丢弃，不落盘；持久化的只有 D 的任务文件与 D5 的轨迹。
 inspect_time / time_control / memory 都是 B 的工具路由，与 execute_action 平级；
 finish 仍由 C 收；结算是 C 调 B 的影子执行，B 不改真实状态。
+
+base_time 与 now 的关系：
+  base_time 是任务文件里的输入（字符串，持久，D 写）；
+  now 是 B 在 reset 时解析出来的运行时值（整数分钟，内存）；
+  工具只读 now；base_time 只用于 reset、校验、日志与复现；
+  静止时间下两者数值相等；将来若加时间推进，now 会变、base_time 不动。
 ```
 
 ### 3.5 改动清单
