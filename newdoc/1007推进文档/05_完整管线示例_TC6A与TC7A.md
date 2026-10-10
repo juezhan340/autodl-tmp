@@ -28,7 +28,7 @@
         ↓
   D6 复核（TC6A 走规则判定；TC7A 走 D6 语义复核）
         ↓
-TC_dataset.jsonl（存 task 真值 + world 初值 + 轨迹 + 标签）
+TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category / d6 / d6_votes）
 ```
 
 ```text
@@ -131,7 +131,9 @@ D5 组装运行时 scenario（对齐现有 blueprint_to_scenario）：
                      （老代码写死 10，要改）
   world            ← blueprint.world（新增；B reset 只读这块）
   gen / category   只留在蓝图，不传 B
-  轨迹（D5 写）     ← session_id / turn_index / clock / memory_before/after / schedules
+  D5 落盘的一行      ← {scenario, record, labels, category, d6, d6_votes}
+                      （record 里是 turns / final_state / finish / protocol，
+                        与现有 D5_trajectories.jsonl 同构）
 
 两点对齐说明：
   1  现有蓝图没有 persona；TC7A 的 memory_initial 依赖画像，
@@ -208,7 +210,7 @@ s0：{{s0}}
 base_time：{{base_time}}
 ```
 
-### 2.2 D2-1 输出（TC6A 的真实 task）
+### 2.2 D2-1 输出（TC6A 草稿）与 D4 落蓝图时的落位
 
 ```json
 {"intent": "今晚睡前把客厅灯关掉",
@@ -218,6 +220,14 @@ base_time：{{base_time}}
  "conditions": [{"device_id": "device_living_light", "field": "on",
                  "operator": "eq", "value": false}],
  "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}}
+```
+
+```text
+D4 把草稿收进蓝图时要分家（方案 3，写入时分层）：
+  task  ← intent / conditions / expected_finish /
+          at_time_expected / due_steps
+  world ← base_time / horizon_minutes
+  gen   ← time_mention（生成元数据，不进运行时）
 ```
 
 ### 2.3 D0 模板：D0_request_TC6A.md（写用户话提示词全文）
@@ -331,15 +341,52 @@ TC6A 附加段内容
 ```
 
 ```text
-真实轨迹（turns）
-  turn1  A: inspect_time {}
-         B: {"now":"2026-10-10 09:30","clock":"virtual"}
-  turn2  A: time_control {"op":"schedule","at":"2026-10-10 22:00",
-                          "steps":[{"device_id":"device_living_light","action":"turn_off","params":{}}]}
-         B: {"schedule_id":"sch_01","at":"2026-10-10 22:00","status":"pending"}
-  turn3  A: finish {"outcome":"completed",
-                    "summary":"今晚10点关掉客厅灯，已经预约。"}
-         C: 收下 finish，episode 结束
+D5 落盘的 record（对齐现有 EpisodeRun.record：scenario_id / turns / final_state /
+finish / protocol；每个 turn 含 observation_before / tool_calls / events / observation_after）
+
+{
+  "scenario_id": "sc_TC6A_0001",
+  "turns": [
+    {"turn": 1,
+     "observation_before": {完整 A 上下文：user_request + 工具表 + 历史},
+     "tool_calls": [{"name": "inspect_time", "arguments": {}, "call_id": "turn_1_0"}],
+     "events": [{"call_id": "turn_1_0", "tool_name": "inspect_time",
+                 "result": {"ok": true,
+                            "data": {"now": "2026-10-10 09:30", "clock": "virtual"}}}],
+     "observation_after": {同上，追加本次工具结果}},
+    {"turn": 2,
+     "tool_calls": [{"name": "time_control",
+                     "arguments": {"op": "schedule", "at": "2026-10-10 22:00",
+                                   "steps": [{"device_id": "device_living_light",
+                                              "action": "turn_off", "params": {}}]},
+                     "call_id": "turn_2_0"}],
+     "events": [{"call_id": "turn_2_0", "tool_name": "time_control",
+                 "result": {"ok": true,
+                            "data": {"schedule_id": "sch_01",
+                                     "at": "2026-10-10 22:00", "status": "pending"}}}],
+     "observation_after": {同上}},
+    {"turn": 3,
+     "tool_calls": [{"name": "finish",
+                     "arguments": {"outcome": "completed",
+                                   "summary": "今晚10点关掉客厅灯，已经预约。"},
+                     "call_id": "turn_3_0"}],
+     "events": [],
+     "observation_after": {同上}}
+  ],
+  "final_state": {"device_living_light": {"on": true, "mode": "bright"},
+                  "...": "其余设备状态原样"},
+  "finish": {"summary": "今晚10点关掉客厅灯，已经预约。", "outcome": "completed"},
+  "protocol": {"terminated": true, "truncated": false,
+               "finish_requested": true, "turn_count": 3}
+}
+
+record 里新增可选块（仅 TC 任务）：
+{"tc_trace": {"clock": {"base_time": "2026-10-10 09:30", "now": "2026-10-10 09:30"},
+              "schedules": [{"schedule_id": "sch_01", "at": "2026-10-10 22:00"}],
+              "shadow_result": {"device_living_light": {"on": {"from": true, "to": false}}}}}
+
+注意：final_state 里客厅灯仍是 on=true——静止时间下预约不真正执行；
+"到点会不会变成 false"由结算阶段的影子执行判定（见 2.9）。
 ```
 
 ### 2.9 D6 判定（TC6A 规则判定）
@@ -353,22 +400,48 @@ TC6A 附加段内容
    影子执行结果满足 conditions                 → 通过
    （due_state 有值时在快照上跑；掉线不处理）
 标签
-  {"place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
+  {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
+   "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
+  · C-1/C-3/C-4 沿用现有口径（协议 / 取证 / finish 契约）
+  · C-2 对 TC6A 改为"影子结算结果满足 conditions"，不再看 final_state
+  · place_ok / steps_ok / settle_ok 是 TC6A 新增键
+D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
 ```
 
 ### 2.10 进数据集
 
 ```json
-{"scenario_id": "sc_TC6A_0001", "category": "TC6A",
- "user_request": "今晚10点帮我把客厅灯关掉吧。",
- "task": {"at_time_expected": "2026-10-10 22:00",
-                "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
-                "conditions": [{"device_id": "device_living_light", "field": "on",
-                                "operator": "eq", "value": false}]},
- "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080},
- "trajectory_ref": "TC_trajectories.jsonl#sc_TC6A_0001",
- "labels": {"place_ok": true, "steps_ok": true, "settle_ok": true}}
+{
+  "scenario": {
+    "scenario_id": "sc_TC6A_0001",
+    "blueprint_id": "bp_TC6A_0001",
+    "home": {"...": "s0 全量（与蓝图 home 相同）"},
+    "user_request": "今晚10点帮我把客厅灯关掉吧。",
+    "task": {"intent": "今晚睡前把客厅灯关掉",
+             "conditions": [{"device_id": "device_living_light", "field": "on",
+                             "operator": "eq", "value": false}],
+             "keep": [], "required_observations": [],
+             "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+             "at_time_expected": "2026-10-10 22:00",
+             "due_steps": [{"device_id": "device_living_light",
+                            "action": "turn_off", "params": {}}],
+             "memory_expected": "", "forbidden_actions": [],
+             "required_effects": [], "required_calls": [], "turns": []},
+    "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
+    "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080,
+              "memory_initial": "", "session_turns": 0, "due_state": null}
+  },
+  "record": {"...": "见 2.8 的 record"},
+  "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
+             "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false},
+  "category": "TC6A",
+  "d6": "跳过",
+  "d6_votes": []
+}
 ```
+
+D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同，只收录标签全 true 的行
+（沿用现有 D_copy_dataset 口径；TC 新增键也要求为 true）。
 
 ## 3 TC7A 完整管线
 
@@ -427,7 +500,7 @@ s0：{{s0}}
 base_time：{{base_time}}
 ```
 
-### 3.2 D2-1 输出（TC7A 的真实 task）
+### 3.2 D2-1 输出（TC7A 草稿）与 D4 落蓝图时的落位
 
 ```json
 {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
@@ -437,6 +510,17 @@ base_time：{{base_time}}
  "conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
                  "operator": "eq", "value": true}],
  "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}}
+```
+
+```text
+D4 把草稿收进蓝图时要分家（方案 3，写入时分层）：
+  task  ← intent / conditions / expected_finish / memory_expected /
+          forbidden_actions / required_effects / required_calls
+  world ← base_time / horizon_minutes / memory_initial / session_turns / due_state
+  gen   ← tc_schema / 生成元数据（memory 的生成理由）
+
+注意：memory_initial 在 D2-1 草稿里，落蓝图时必须移到 world；
+      task 里不保留 memory_initial。
 ```
 
 ### 3.3 D0 模板：D0_request_TC7A.md（写用户话提示词全文）
@@ -543,15 +627,59 @@ TC7A 附加段内容
 ```
 
 ```text
-真实轨迹（turns）
-  turn1  A: memory {"op":"read"}
-         B: {"text":"用户对花粉过敏，别开窗；闷了先开空气净化器"}
-  turn2  A: inspect_device {"device_id":"device_bedroom_purifier"}
-         B: {"state":{"on":false},"actions":[...turn_on...]}
-  turn3  A: execute_action {"device_id":"device_bedroom_purifier","action":"turn_on","params":{}}
-         B: {"state_after":{"on":true},"state_diff":{"on":{"from":false,"to":true}},"verified":true}
-  turn4  A: finish {"outcome":"completed","summary":"卧室闷，按您的习惯开了空气净化器，没有开窗。"}
-         C: 收下 finish，episode 结束
+D5 落盘的 record（与现有结构同构）
+
+{
+  "scenario_id": "sc_TC7A_0001",
+  "turns": [
+    {"turn": 1,
+     "observation_before": {完整 A 上下文：user_request + 工具表 + 历史},
+     "tool_calls": [{"name": "memory", "arguments": {"op": "read"},
+                     "call_id": "turn_1_0"}],
+     "events": [{"call_id": "turn_1_0", "tool_name": "memory",
+                 "result": {"ok": true,
+                            "data": {"text": "用户对花粉过敏，别开窗；闷了先开空气净化器"}}}],
+     "observation_after": {同上，追加记忆文本}},
+    {"turn": 2,
+     "tool_calls": [{"name": "inspect_device",
+                     "arguments": {"device_id": "device_bedroom_purifier"},
+                     "call_id": "turn_2_0"}],
+     "events": [{"call_id": "turn_2_0", "tool_name": "inspect_device",
+                 "result": {"ok": true,
+                            "data": {"state": {"on": false}, "actions": ["...turn_on..."]}}}],
+     "observation_after": {同上}},
+    {"turn": 3,
+     "tool_calls": [{"name": "execute_action",
+                     "arguments": {"device_id": "device_bedroom_purifier",
+                                   "action": "turn_on", "params": {}},
+                     "call_id": "turn_3_0"}],
+     "events": [{"call_id": "turn_3_0", "tool_name": "execute_action",
+                 "result": {"ok": true,
+                            "data": {"state_after": {"on": true},
+                                     "state_diff": {"on": {"from": false, "to": true}},
+                                     "verified": true}}}],
+     "observation_after": {同上}},
+    {"turn": 4,
+     "tool_calls": [{"name": "finish",
+                     "arguments": {"outcome": "completed",
+                                   "summary": "卧室闷，按您的习惯开了空气净化器，没有开窗。"},
+                     "call_id": "turn_4_0"}],
+     "events": [],
+     "observation_after": {同上}}
+  ],
+  "final_state": {"device_bedroom_purifier": {"on": true},
+                  "...": "其余设备状态原样"},
+  "finish": {"summary": "卧室闷，按您的习惯开了空气净化器，没有开窗。",
+             "outcome": "completed"},
+  "protocol": {"terminated": true, "truncated": false,
+               "finish_requested": true, "turn_count": 4}
+}
+
+record 里新增可选块（仅 TC 任务）：
+{"tc_trace": {"clock": {"base_time": "2026-10-10 09:30", "now": "2026-10-10 09:30"},
+              "memory_before": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+              "memory_after": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+              "schedules": []}}
 ```
 
 ### 3.9 D0 模板：D6_TC7A.md（语义复核提示词全文）
@@ -583,15 +711,33 @@ TC7A 附加段内容
 ### 3.10 D6 输出与进数据集
 
 ```json
-{"scenario_id": "sc_TC7A_0001", "category": "TC7A",
- "user_request": "卧室有点闷，帮我想想办法。",
- "task": {"memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
-                "forbidden_actions": ["开窗通风类动作"],
-                "required_effects": ["device_bedroom_purifier on=true"],
-                "conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
-                                "operator": "eq", "value": true}]},
- "trajectory_ref": "TC_trajectories.jsonl#sc_TC7A_0001",
- "labels": {"read_ok": true, "comply_ok": true, "summary_ok": true}}
+{
+  "scenario": {
+    "scenario_id": "sc_TC7A_0001",
+    "blueprint_id": "bp_TC7A_0001",
+    "home": {"...": "s0 全量（与蓝图 home 相同）"},
+    "user_request": "卧室有点闷，帮我想想办法。",
+    "task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
+             "conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
+                             "operator": "eq", "value": true}],
+             "keep": [], "required_observations": [],
+             "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
+             "memory_expected": "",
+             "forbidden_actions": ["开窗通风类动作"],
+             "required_effects": ["device_bedroom_purifier on=true"],
+             "required_calls": [], "turns": []},
+    "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
+    "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080,
+              "memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+              "session_turns": 0, "due_state": null}
+  },
+  "record": {"...": "见 3.8 的 record"},
+  "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
+             "read_ok": true, "comply_ok": true, "summary_ok": true},
+  "category": "TC7A",
+  "d6": "对",
+  "d6_votes": ["对", "对", "对"]
+}
 ```
 
 ## 4 两条管线的涉及文件清单
@@ -628,4 +774,8 @@ TC7A 附加段内容
 5  轮数上限 12 的代码改动（B_models / B_schema / D4 / D5 / A_policy / 评测 runner）
 6  蓝图是否新增 persona_id（TC7A 的 memory_initial 依赖画像，现有蓝图不存画像）
 7  kind 与 category 统一用哪个键（现有蓝图用 category，新文档用 kind）
+8  record 里新增的 tc_trace 块（clock / memory_before / memory_after /
+   schedules / shadow_result）字段与容器名确认
+9  TC6A 的 C-2 判定源：现有 C-2 看 final_state，TC6A 需要改成
+   "影子结算结果满足 conditions"，请在 evaluator 里单独分支
 ```
