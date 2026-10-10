@@ -167,3 +167,300 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 4  steps 是否作为判定真值参与部分分（比对模型写的 steps），还是只用于影子执行？
    影响 steps 是否必须进 task
 ```
+
+---
+
+## 附录 A 新增字段逐项举例
+
+> 本附录只解释"每一项是什么"，不讨论放 task 还是放独立块。
+> 固定示例环境（后面反复用）：
+> ```text
+> now = 2026-10-10 09:30（周六）
+> 卧室：空调 device_bedroom_climate、空气净化器 device_bedroom_purifier、
+>       台灯 device_bedroom_lamp、加湿器 device_bedroom_humidifier
+> 客厅：主灯 device_living_light
+> ```
+
+### A.1 time_type
+
+```json
+"time_type": "absolute"     // 例："今晚 10 点把客厅灯关掉"
+"time_type": "relative"     // 例："40 分钟后把加湿器关掉"
+```
+
+```text
+是什么    这道题属于哪种时间说法，只给数据管线用
+谁写谁读  D 写；D 统计与复现读；B、C 不读
+反例      "过一会儿" 既不是绝对也不是相对 → 这种题不收录
+```
+
+### A.2 at_expr
+
+```json
+"at_expr": "今晚10点"
+"at_expr": "40分钟后"
+"at_expr": "明早7点"
+```
+
+```text
+是什么    用户话里那个时间说法的原样记录（给审计和回归用）
+正例见上；反例：at_expr 里写 "2026-10-10 22:00"（这是答案，不是题面说法）
+谁写谁读  D 写；D 审计读；模型看不到这个字段
+```
+
+### A.3 at_expected
+
+```text
+场景      now = 2026-10-10 09:30
+```
+
+```json
+"at_expr": "今晚10点"   →  "at_expected": "2026-10-10 22:00"
+"at_expr": "40分钟后"   →  "at_expected": "2026-10-10 10:10"
+"at_expr": "明早7点"    →  "at_expected": "2026-10-11 07:00"
+"at_expr": "23:40 说 40 分钟后" → "at_expected": "2026-10-11 00:20"
+```
+
+```text
+是什么    这道题的标准答案时刻，C 判定用；模型写的 at 与它分钟级相等才算对
+反例      模型写 "2026-10-10 22:01" → 差 1 分钟，判错或按部分分
+谁写谁读  D 算好；C / D6 读；模型看不到
+```
+
+### A.4 offset_minutes
+
+```json
+"at_expr": "40分钟后"      →  "offset_minutes": 40
+"at_expr": "两个小时后"     →  "offset_minutes": 120
+"at_expr": "明天同一时间"   →  "offset_minutes": 1440
+```
+
+```text
+是什么    相对题的偏移量（分钟），D 用它算 at_expected、写用户话
+谁写谁读  D 写；D 自己读；模型看不到（模型看到的是"40 分钟后"这句话）
+反例      "过一会儿" 没有具体数值 → 不收录
+```
+
+### A.5 base_time
+
+```json
+"base_time": "2026-10-10 09:30"
+```
+
+```text
+是什么    这一局开始时家里几点；B 在 reset 时解析成 now，整个会话冻结
+例子      inspect_time 第一次返回 09:30，之后每次都返回 09:30
+反例      同一局中途变成 09:31 → 不允许（冻结时间的不变量）
+谁写谁读  D 抽样决定；B reset 读；C 记录读
+```
+
+### A.6 horizon_minutes
+
+```json
+"horizon_minutes": 10080
+```
+
+```text
+是什么    预约窗口上限（7 天）；校验 at − now ≤ 10080
+边界例子  now=2026-10-10 09:30
+          at=2026-10-17 09:30 → 差 10080 → 合法
+          at=2026-10-17 09:31 → 差 10081 → INVALID_TIME
+谁写谁读  常量；B / C 校验读
+```
+
+### A.7 steps（TC6 的期望动作序列）
+
+```json
+"steps": [
+  {"device_id": "device_living_light", "action": "turn_off", "params": {}},
+  {"device_id": "device_bedroom_purifier", "action": "turn_on", "params": {}}
+]
+```
+
+```text
+是什么    这张预约单"到点应该执行什么"的期望真值
+对应关系  模型实际提交的 steps 在它的 time_control.schedule 调用里；
+          这个字段是参考答案，C 拿模型写的和它比对
+正例      模型写 turn_off 客厅灯 + turn_on 净化器 → 与期望一致
+反例      模型只写 turn_off 客厅灯 → 缺一步，按部分分
+谁写谁读  D 出题写；C / D6 读
+```
+
+### A.8 due_state（到点状态快照，不含掉线）
+
+```json
+"due_state": {"device_bedroom_humidifier": {"on": false}}
+"due_state": {"device_bedroom_climate": {"target": 26.0}}
+```
+
+```text
+是什么    假设"到点时世界长这样"，结算时用它替换影子执行的起点状态
+例子1     due_state 说加湿器已经关着，预约是"关加湿器"
+          → 影子执行 changed=false → 记"目标已达成"
+例子2     due_state 说空调已被别人调到 26，预约是"设为 24"
+          → 影子执行把它设成 24 → 判成功
+不再包含  设备掉线（available=false）不构造、不处理
+谁写谁读  D 出题写（可选）；C 结算读
+```
+
+### A.9 memory_initial
+
+```json
+"memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器"
+```
+
+```text
+是什么    开局时记忆里已经写好的初始文本；B 在 reset 时复制成运行时 memory
+来源      不抽样：D2 依据本轮真实 s0（有哪些房间/设备）与画像现场生成
+正例      s0 有空气净化器、画像写"花粉过敏" → 上面这句成立
+反例      s0 没有窗户设备，却写"别开窗" → 一致性校验不过
+谁写谁读  D 写；B reset 读；会话结束 B 丢弃
+```
+
+### A.10 memory_expected
+
+```json
+用户话： "记住：我睡觉要关客厅灯"
+"memory_expected": "睡觉时要关客厅灯"
+```
+
+```text
+是什么    模型应该写进记忆的内容（判定真值）
+正例      模型 memory.write("睡觉时要关客厅灯") → 一致
+反例      模型 write("睡觉时要关卧室灯") → 设备写错，判错
+          模型 write("") 或根本没写 → 判错
+谁写谁读  D 出题写；C / D6 读（同义改写算不算对，口径待定）
+```
+
+### A.11 forbidden_actions
+
+```json
+记忆："用户对花粉过敏，别开窗"
+"forbidden_actions": ["开窗通风类动作"]
+```
+
+```text
+是什么    受记忆约束、这道题里不许出现的动作
+判定      轨迹里出现这类动作 → 约束违反（即使最后目标达成也扣分）
+前提      只有 s0 里真的有对应设备，D 才能写这条；
+          没有窗户设备就换别的约束（例如"不许把空调调到 24 度以下"）
+谁写谁读  D 出题写；C 判定读
+```
+
+### A.12 required_effects
+
+```json
+记忆："闷了先开空气净化器"
+"required_effects": ["device_bedroom_purifier on=true"]
+```
+
+```text
+是什么    受记忆驱动、必须达成的效果
+判定      终态或影子结果里必须为真；没做 → 违反
+正例      模型开了净化器 → 满足
+反例      模型开了加湿器 → 不满足（设备选错）
+谁写谁读  D 出题写；C 判定读
+```
+
+### A.13 action_steps（TC7B / TC7C 的"现在就做"）
+
+```json
+用户话："记住：我睡觉要关客厅灯；顺便把卧室灯调暗一点"
+"memory_expected": "睡觉时要关客厅灯"
+"action_steps": [{"device_id": "device_bedroom_lamp", "action": "set_percentage",
+                  "params": {"value": 30}}]
+```
+
+```text
+是什么    这一轮里"现在就执行"的动作序列，和记忆写入分开记账
+正例见上：关客厅灯进 memory_expected，调暗卧室灯进 action_steps
+反例      模型把"关客厅灯"现在就执行了 → 执行了不该现在做的事，判错
+          模型把"调暗台灯"写进记忆、不执行 → 漏了真实动作，判错
+谁写谁读  D 出题写；C 判定读
+```
+
+### A.14 session_turns
+
+```json
+"session_turns": 0     // 单轮任务（TC6A/TC6B/TC7A/TC7B）
+"session_turns": 3     // 会话任务（TC7C）：三轮共享环境与记忆
+```
+
+```text
+是什么    这道题有几个用户轮次；>0 表示 B 只 reset 一次、轮间不重置
+例子      session_turns=3 → 轮1写记忆、轮2用记忆、轮3查状态，全程同一份 memory 与设备状态
+谁写谁读  D 设计写；C 的 runner 与 B 的会话模式读
+```
+
+### A.15 turns[]（TC7C 的逐轮计划）
+
+```json
+"turns": [
+  {"turn": 1, "goal": "记下睡觉要关客厅灯", "memory_op": "write",
+   "memory_expected": "睡觉时要关客厅灯", "action_steps": []},
+  {"turn": 2, "goal": "用记忆把客厅灯关掉", "memory_op": "read",
+   "action_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
+   "conditions": [{"device_id": "device_living_light", "field": "on", "operator": "eq", "value": false}]},
+  {"turn": 3, "goal": "如实回答客厅灯状态", "memory_op": "read",
+   "action_steps": [], "conditions": []}
+]
+```
+
+```text
+子字段      turn          第几轮
+            goal          这一轮要完成什么（不泄露给模型，判定用）
+            memory_op     这一轮预期的记忆操作：write / read / none
+            memory_expected / action_steps / conditions   与前面单轮字段同义
+判定        逐轮判：轮1 记忆写对没有；轮2 是否读了记忆并关灯；轮3 回答是否与状态一致
+谁写谁读    D 设计写；C / D6 逐轮判定读
+```
+
+### A.16 kind
+
+```json
+"kind": "TC6B"
+```
+
+```text
+是什么    这道题的类别标签：TC6A/TC6B/TC7A/TC7B/TC7C
+谁写谁读  D 写；D（选模板/账本）与 C（选判定）读；
+          B 不按 kind 分支（只管世界初值）
+```
+
+### A.17 轨迹侧新增（不是 task 字段，顺带说明）
+
+```json
+{"session_id": "sess_0007", "turn_index": 2,
+ "clock": {"base_time": "2026-10-10 09:30", "now": "2026-10-10 09:30"},
+ "memory_before": "睡觉时要关客厅灯", "memory_after": "睡觉时要关客厅灯",
+ "schedules": [{"schedule_id": "sch_01", "at": "2026-10-10 10:10"}]}
+```
+
+```text
+session_id    会话编号（TC7C 才有）
+turn_index    这条记录属于第几轮
+clock         这局的时间口径（冻结的 base_time / now）
+memory_before / memory_after   一次记忆读写前后的内容
+schedules     当前预约单快照
+这些都是 D5 落盘的轨迹字段，不进 task、不进 scenario
+```
+
+## 附录 B 老字段速查（不是新增，读例子时会用到）
+
+```json
+"intent": "进门还是热，想把卧室空调调低一点"
+"conditions": [{"device_id": "device_bedroom_climate", "field": "target",
+                "operator": "le", "value": 27.0}]
+"keep": [{"device_id": "device_living_light", "field": "on", "operator": "eq", "value": false}]
+"required_observations": [{"device_id": "device_bedroom_climate"}]
+"expected_finish": {"outcome": "completed", "allowed_reason_codes": []}
+```
+
+```text
+intent                出题人写的一句话目标（给评审看，不判分）
+conditions            目标条件：eq 精确值 / ge 比初值高 / le 比初值低
+keep                  不该动的设备（保持原样）
+required_observations 必须先查过的设备（T4 用）
+expected_finish       finish 契约：completed / refused + 允许的 reason_code
+probe                 T4 专用的"必须被拒绝的尝试"，不进蓝图
+```
