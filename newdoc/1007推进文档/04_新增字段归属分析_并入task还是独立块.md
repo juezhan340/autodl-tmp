@@ -1,6 +1,6 @@
 # 04 新增字段放哪：并入 task，还是独立成一块
 
-> 背景：TC6 / TC7 引入了一批新字段（at_expr、at_expected、offset_minutes、base_time、memory_initial、memory_expected、session_turns、due_state 等）。
+> 背景：TC6 / TC7 引入了一批新字段（time_mention、at_time_expected、offset_minutes、base_time、memory_initial、memory_expected、session_turns、due_state 等）。
 > 现有管线的每条记录是 s0（家）/ 画像 / task / user_request 这几个部分；本文只讨论"新字段接在哪里"，
 > 不改任何已有结论（静止时间、影子执行、掉线不处理、轮数 12）。
 
@@ -10,13 +10,13 @@
 推荐：三层拆分（方案 C）
 
   判定真值（C / D6 要用）    → 并入 task（扩展 TaskSpec，字段可选）
-                              例：at_expected、steps、memory_expected、forbidden_actions
+  例：at_time_expected、due_steps、memory_expected、forbidden_actions
 
   世界初值（B reset 要用）    → 独立成一块（scenario.tc）
                               例：base_time、memory_initial、session_turns、due_state
 
   生成元数据（只有 D 用）      → 只留在蓝图 / 草稿，不进 scenario
-                              例：time_type、at_expr、offset_minutes
+                              例：time_type、time_mention、offset_minutes
 
 一句话：谁消费，就放在谁那一层；一个字段只放一处，不做冗余。
 ```
@@ -26,12 +26,12 @@
 ```text
 字段              谁产生   谁消费                放哪（方案 C）
 time_type         D 出题   D（统计/复现）         蓝图
-at_expr           D 出题   D（审计）             蓝图
-offset_minutes    D 出题   D（算 at_expected）    蓝图
+time_mention           D 出题   D（审计）             蓝图
+offset_minutes    D 出题   D（算 at_time_expected）    蓝图
 base_time         D 抽样   B reset（→ now）       scenario.tc
 horizon_minutes   常量     B / C 校验             scenario.tc（或常量）
-at_expected       D 出题   C / D6 判定            task
-steps             D 出题   C 判定（部分分依据）     task
+at_time_expected       D 出题   C / D6 判定            task
+due_steps         D 出题   C 判定（部分分依据）     task
 memory_initial    D 生成   B reset（→ memory）    scenario.tc
 memory_expected   D 出题   C / D6 判定            task
 session_turns     D 设计   C runner / B 会话模式   scenario.tc
@@ -49,8 +49,8 @@ forbidden/required D 出题  C 判定（TC7A 约束）     task
 ```text
 task: {
   intent, conditions, keep, required_observations, expected_finish,
-  time_type, at_expr, offset_minutes, base_time, at_expected,
-  steps, memory_initial, memory_expected, session_turns, due_state
+time_type, time_mention, offset_minutes, base_time, at_time_expected,
+due_steps, memory_initial, memory_expected, session_turns, due_state
 }
 ```
 
@@ -59,21 +59,21 @@ task: {
 缺点   task 现在的语义是"隐藏目标，只给 C 看"；把 base_time、memory_initial
        这类"世界初值"混进去以后，B 的 reset 也要读 task，语义变模糊；
        TaskSpec 必须扩展，而且它同时被 D6、评测、统计脚本引用，改动面最大；
-       生成元数据（at_expr / offset）也进 task 的话，判定侧会看到用不到的字段
+       生成元数据（time_mention / offset）也进 task 的话，判定侧会看到用不到的字段
 ```
 
 ### 2.2 方案 B：全部独立成 scenario.tc（task 完全不动）
 
 ```text
 task: { intent, conditions, keep, required_observations, expected_finish }   ← 原样
-tc:   { kind, time_type, at_expr, offset_minutes, base_time, at_expected,
-        steps, memory_initial, memory_expected, session_turns, due_state }
+tc:   { kind, time_type, time_mention, offset_minutes, base_time, at_time_expected,
+        due_steps, memory_initial, memory_expected, session_turns, due_state }
 ```
 
 ```text
 优点   完全不动老 TaskSpec、老数据、老判定；B 只读 tc；隔离最彻底
 缺点   "判定真值"和"任务目标"被拆到两个箱子：C/D6 要同时读 task（conditions）
-       和 tc（at_expected / memory_expected），漏读一个就判错；
+       和 tc（at_time_expected / memory_expected），漏读一个就判错；
        task 的概念被拆散，后续 T1~T5 若也要扩展会冒出第二套模式
 ```
 
@@ -82,14 +82,14 @@ tc:   { kind, time_type, at_expr, offset_minutes, base_time, at_expected,
 ```text
 task: {
   intent, conditions, keep, required_observations, expected_finish,   ← 老字段不动
-  at_expected, steps, memory_expected, forbidden_actions, required_effects   ← 新增可选字段
+  at_time_expected, due_steps, memory_expected, forbidden_actions, required_effects   ← 新增可选字段
 }
 
 scenario.tc: {
   kind, base_time, horizon_minutes, memory_initial, session_turns, due_state
 }
 
-蓝图 / 草稿（不进 scenario）: { time_type, at_expr, offset_minutes }
+蓝图 / 草稿（不进 scenario）: { time_type, time_mention, offset_minutes }
 ```
 
 ```text
@@ -130,17 +130,17 @@ C/D6 读取         只读 task                同时读 task + tc        只读
 
 ```text
 TaskSpec 扩展
-  新增可选字段：at_expected、steps、memory_expected、forbidden_actions、required_effects
+  新增可选字段：at_time_expected、due_steps、memory_expected、forbidden_actions、required_effects
   to_dict 只在字段有值时输出新键 → 老 task 的 JSON 与指纹保持逐字不变
   from_dict 缺省为空 → 老数据读取路径不受影响
 
 scenario.tc
   B.reset 只读：base_time、memory_initial、session_turns
-  C 判定读：at_expected / steps / memory_expected（在 task 里）
+  C 判定读：at_time_expected / due_steps / memory_expected（在 task 里）
   due_state 给结算用；没有就按当前状态影子执行（掉线不处理）
 
 蓝图 / 草稿
-  保留 time_type、at_expr、offset_minutes 与 memory 的生成理由，
+  保留 time_type、time_mention、offset_minutes 与 memory 的生成理由，
   用于复现、审计与失败重放；D5 之后的轨迹与数据集不再带这些生成元数据
 
 版本与指纹
@@ -162,10 +162,10 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 ```text
 1  采用方案 C 吗？还是选 A / B？
 2  scenario.tc 是否改名为 scenario.world（推荐改，语义更直白）？
-3  task 里的新字段是平铺（at_expected 直接放在 task 下）还是再套一层 tc_truth？
+3  task 里的新字段是平铺（at_time_expected 直接放在 task 下）还是再套一层 tc_truth？
    建议平铺，字段少、读取直接；如果以后字段多了再考虑分组
-4  steps 是否作为判定真值参与部分分（比对模型写的 steps），还是只用于影子执行？
-   影响 steps 是否必须进 task
+4  due_steps 是否作为判定真值参与部分分（比对模型写的 steps），还是只用于影子执行？
+   影响 due_steps 是否必须进 task
 ```
 
 ---
@@ -194,31 +194,31 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 反例      "过一会儿" 既不是绝对也不是相对 → 这种题不收录
 ```
 
-### A.2 at_expr
+### A.2 time_mention
 
 ```json
-"at_expr": "今晚10点"
-"at_expr": "40分钟后"
-"at_expr": "明早7点"
+"time_mention": "今晚10点"
+"time_mention": "40分钟后"
+"time_mention": "明早7点"
 ```
 
 ```text
 是什么    用户话里那个时间说法的原样记录（给审计和回归用）
-正例见上；反例：at_expr 里写 "2026-10-10 22:00"（这是答案，不是题面说法）
+正例见上；反例：time_mention 里写 "2026-10-10 22:00"（这是答案，不是题面说法）
 谁写谁读  D 写；D 审计读；模型看不到这个字段
 ```
 
-### A.3 at_expected
+### A.3 at_time_expected
 
 ```text
 场景      now = 2026-10-10 09:30
 ```
 
 ```json
-"at_expr": "今晚10点"   →  "at_expected": "2026-10-10 22:00"
-"at_expr": "40分钟后"   →  "at_expected": "2026-10-10 10:10"
-"at_expr": "明早7点"    →  "at_expected": "2026-10-11 07:00"
-"at_expr": "23:40 说 40 分钟后" → "at_expected": "2026-10-11 00:20"
+"time_mention": "今晚10点"   →  "at_time_expected": "2026-10-10 22:00"
+"time_mention": "40分钟后"   →  "at_time_expected": "2026-10-10 10:10"
+"time_mention": "明早7点"    →  "at_time_expected": "2026-10-11 07:00"
+"time_mention": "23:40 说 40 分钟后" → "at_time_expected": "2026-10-11 00:20"
 ```
 
 ```text
@@ -230,13 +230,13 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 ### A.4 offset_minutes
 
 ```json
-"at_expr": "40分钟后"      →  "offset_minutes": 40
-"at_expr": "两个小时后"     →  "offset_minutes": 120
-"at_expr": "明天同一时间"   →  "offset_minutes": 1440
+"time_mention": "40分钟后"      →  "offset_minutes": 40
+"time_mention": "两个小时后"     →  "offset_minutes": 120
+"time_mention": "明天同一时间"   →  "offset_minutes": 1440
 ```
 
 ```text
-是什么    相对题的偏移量（分钟），D 用它算 at_expected、写用户话
+是什么    相对题的偏移量（分钟），D 用它算 at_time_expected、写用户话
 谁写谁读  D 写；D 自己读；模型看不到（模型看到的是"40 分钟后"这句话）
 反例      "过一会儿" 没有具体数值 → 不收录
 ```
@@ -268,10 +268,10 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 谁写谁读  常量；B / C 校验读
 ```
 
-### A.7 steps（TC6 的期望动作序列）
+### A.7 due_steps（TC6 的期望动作序列）
 
 ```json
-"steps": [
+"due_steps": [
   {"device_id": "device_living_light", "action": "turn_off", "params": {}},
   {"device_id": "device_bedroom_purifier", "action": "turn_on", "params": {}}
 ]
@@ -279,8 +279,8 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 
 ```text
 是什么    这张预约单"到点应该执行什么"的期望真值
-对应关系  模型实际提交的 steps 在它的 time_control.schedule 调用里；
-          这个字段是参考答案，C 拿模型写的和它比对
+对应关系  due_steps 是参考答案；模型实际提交的 steps 在它的
+          time_control.schedule 调用里（接口字段名仍叫 steps），C 拿两者比对
 正例      模型写 turn_off 客厅灯 + turn_on 净化器 → 与期望一致
 反例      模型只写 turn_off 客厅灯 → 缺一步，按部分分
 谁写谁读  D 出题写；C / D6 读
