@@ -7,20 +7,18 @@
 ## 0 一屏
 
 ```text
-推荐：方案 4 —— 存储一体化 + 运行时按消费者拆分
+2026-10-10 决定：采用方案 3（写入时分层）。
+下面保留五方案对比，方案 4 的写法留作备选参考。
 
-存储视角（D 的一条记录）
-  新增字段全部放在一个 tc 块里（带 tc_schema 版本）：
-  判定真值 + 世界初值 + 会话结构 + 生成元数据都在里面
+方案 3 的落位（写入时就分好）：
+  task            判定真值（at_time_expected、due_steps、memory_expected、
+                  forbidden_actions、required_effects、required_calls、turns 真值）
+  world           世界初值（base_time、memory_initial、session_turns、
+                  due_state、horizon_minutes）
+  gen（蓝图）      生成元数据（kind、tc_schema、time_mention、offset_minutes）
+  轨迹（D5 出）     session_id、turn_index、clock、memory 快照、schedules
 
-运行时视角（D5 展开）
-  判定真值（C / D6 用）   → 并入 task（可选字段）
-  世界初值（B reset 用）  → scenario.world（base_time、memory_initial、
-                          session_turns、due_state）
-  生成元数据（只有 D 用）  → 蓝图 / 草稿，不进运行时
-  轨迹产物（D5 输出）     → session_id、turn_index、clock、memory 快照、schedules
-
-一句话：存的时候一条记录一个 tc 块，跑的时候各消费者只读自己的层。
+一句话：写的时候就把字段放进对应层，D5 只搬运与校验，不做拆分。
 ```
 
 ## 1 先盘清：新东西分四类，存储视角和运行时视角要分开看
@@ -238,8 +236,8 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 ## 6 待拍板
 
 ```text
-1  采用哪个方案：1 / 2 / 3 / 4 / 5？推荐方案 4（存储一体化 + 运行时按消费者拆分）
-2  存储块叫什么：tc / ext / 其它？带不带 tc_schema 版本号？
+1  方案已定：方案 3（2026-10-10 决定），本条关闭
+2  分层命名：真值进 task、初值进 world、元数据进 gen——world / gen 这两个块名采用吗？
 3  运行时世界块叫什么：scenario.world（推荐）还是沿用 scenario.tc？
 4  task 里的新字段平铺（推荐）还是套一层？套一层的话叫什么？
 5  due_steps 是否参与部分分（比对模型写的 steps），还是只用于影子执行？

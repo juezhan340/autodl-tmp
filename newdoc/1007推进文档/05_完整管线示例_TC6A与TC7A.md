@@ -1,6 +1,7 @@
 # 05 完整管线示例：TC6A 绝对时间 与 TC7A 读预置记忆
 
-> 依据：`04_新增字段归属分析` 的字段清单与推荐方案 4（存储一体化 + 运行时按消费者拆分）。
+> 依据：`04_新增字段归属分析` 的字段清单；按**方案 3（写入时分层）**呈现：
+> 判定真值写进 task、世界初值写进 world、生成元数据留在 gen（蓝图）。
 > 名词按 2026-10-10 定稿：time_mention、at_time_expected、offset_minutes、due_steps、due_state、
 > memory_initial、memory_expected、forbidden_actions、required_effects、required_calls（待审）、
 > session_turns、turns[]、kind、tc_schema。
@@ -27,7 +28,7 @@
         ↓
   D6 复核（TC6A 走规则判定；TC7A 走 D6 语义复核）
         ↓
-  TC_dataset.jsonl（存 tc 块 + 轨迹 + 标签）
+TC_dataset.jsonl（存 task 真值 + world 初值 + 轨迹 + 标签）
 ```
 
 ```text
@@ -53,45 +54,51 @@
 约束   同一任务只冻结一个 base_time；记忆必须与 s0 吻合
 ```
 
-### 1.2 存储结构与运行时结构（方案 4）
+### 1.2 存储结构与运行时结构（方案 3：写入时分层）
 
 ```json
-// D 的一条记录（存储视图）：新字段统一放在 tc 块里
+// D 的一条记录（蓝图）：写入时就已经分好层
 {
   "scenario_id": "sc_TCxA_0001",
   "blueprint_id": "bp_TCxA_0001",
+  "tc_schema": "v1",
+  "kind": "TC6A",
   "home": { "...": "..." },
   "user_request": "（D2-2 写出来后填这里）",
-  "task": { "intent": "...", "conditions": [], "keep": [],
-            "required_observations": [], "expected_finish": {} },
   "episode_config": { "max_turns": 12, "max_tool_calls_per_turn": 1 },
-  "tc": {
-    "tc_schema": "v1",
-    "kind": "TC6A",
-    "base_time": "2026-10-10 09:30",
-    "horizon_minutes": 10080,
-    "time_mention": "今晚10点",
+  "task": {
+    "intent": "...", "conditions": [], "keep": [],
+    "required_observations": [], "expected_finish": {},
     "at_time_expected": "2026-10-10 22:00",
     "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
-    "memory_initial": "",
     "memory_expected": "",
-    "forbidden_actions": [],
-    "required_effects": [],
-    "required_calls": [],
+    "forbidden_actions": [], "required_effects": [], "required_calls": [],
+    "turns": []
+  },
+  "world": {
+    "base_time": "2026-10-10 09:30",
+    "horizon_minutes": 10080,
+    "memory_initial": "",
     "session_turns": 0,
-    "turns": [],
     "due_state": null
+  },
+  "gen": {
+    "time_mention": "今晚10点",
+    "offset_minutes": null
   }
 }
 ```
 
 ```text
-运行时展开（D5 做的事）
-  task            ← 判定真值：at_time_expected / due_steps / memory_expected /
-                    forbidden_actions / required_effects / required_calls
-  scenario.world  ← base_time / memory_initial / session_turns / due_state / horizon_minutes
-  蓝图（不传 B）  ← kind / tc_schema / time_mention / offset_minutes
-  轨迹（D5 写）   ← session_id / turn_index / clock / memory_before/after / schedules
+运行时（D5 只做搬运与校验，不再拆分）
+  scenario.task   ← 记录里的 task（判定真值原样带过去）
+  scenario.world  ← 记录里的 world（B reset 只读这块）
+  蓝图（不传 B）   ← 记录里的 gen / kind / tc_schema
+  轨迹（D5 写）    ← session_id / turn_index / clock / memory_before/after / schedules
+
+写入时就分层意味着：D2-1 / D4 出题时要负责把字段放对位置——
+真值进 task、初值进 world、元数据进 gen；
+D5 只做搬运和 schema 校验，不做"从一个大块拆开"的动作。
 ```
 
 ### 1.3 A 提示词装配（不改老提示词）
@@ -315,7 +322,7 @@ TC6A 附加段内容
 ```json
 {"scenario_id": "sc_TC6A_0001", "kind": "TC6A",
  "user_request": "今晚10点帮我把客厅灯关掉吧。",
- "task_truth": {"at_time_expected": "2026-10-10 22:00",
+ "task": {"at_time_expected": "2026-10-10 22:00",
                 "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
                 "conditions": [{"device_id": "device_living_light", "field": "on",
                                 "operator": "eq", "value": false}]},
@@ -539,7 +546,7 @@ TC7A 附加段内容
 ```json
 {"scenario_id": "sc_TC7A_0001", "kind": "TC7A",
  "user_request": "卧室有点闷，帮我想想办法。",
- "task_truth": {"memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+ "task": {"memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
                 "forbidden_actions": ["开窗通风类动作"],
                 "required_effects": ["device_bedroom_purifier on=true"],
                 "conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
@@ -575,7 +582,8 @@ TC7A 附加段内容
 ```text
 1  required_calls 是否采用（TC7A 的 read_ok、TC7C 第2轮的"必须读过记忆"依赖它；
    不采用的话，读记忆只能从轨迹里人工/事后判断）
-2  方案 4 的命名：存储块 tc 还是 ext；运行时世界块 scenario.world 还是沿用 scenario.tc
+2  方案 3 的落位确认：真值进 task、初值进 world、元数据进 gen；
+   world 块名是否用 world；tc_schema 放顶层还是 gen
 3  TC7A 的 forbidden_actions / required_effects 数据结构（现在例子是字符串列表）
 4  空气净化器落地（设备目录 + B_schema + A 提示词设备常识）
 5  轮数上限 12 的代码改动（B_models / B_schema / D4 / D5 / A_policy / 评测 runner）
