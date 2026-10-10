@@ -202,14 +202,15 @@ A.9    memory_initial     开局记忆内容                  已写入    scena
 A.10   memory_expected    应该写进记忆的内容            已写入    task
 A.11   forbidden_actions  记忆约束下不许做的动作        已写入    task
 A.12   required_effects   记忆驱动必须达成的效果        已写入    task
-A.13   action_steps       TC7 现在就做的动作序列        建议删    task
-A.14   session_turns      会话轮数                      已写入    scenario.tc
-A.15   turns[]            TC7C 逐轮计划                 已写入    task/scenario
-A.16   kind               TC6A…TC7C 类别标签           已写入    scenario.tc
-A.17   轨迹侧新增         session_id / turn_index /      已写入    D5 轨迹
+A.13   session_turns      会话轮数                      已写入    scenario.tc
+A.14   turns[]            TC7C 逐轮计划                 已写入    task/scenario
+A.15   kind               TC6A…TC7C 类别标签           已写入    scenario.tc
+A.16   轨迹侧新增         session_id / turn_index /      已写入    D5 轨迹
                           clock / memory_before/after / schedules
-A.18   required_calls     必须发生过的工具调用          待审      task
+A.17   required_calls     必须发生过的工具调用          待审      task
 ```
+
+action_steps 已在 2026-10-10 按审阅决定删除；替代方案是 A.17 required_calls（待审）。
 
 ### A.1 time_type
 
@@ -392,30 +393,7 @@ A.18   required_calls     必须发生过的工具调用          待审      ta
 谁写谁读  D 出题写；C 判定读
 ```
 
-### A.13 action_steps（TC7B / TC7C 的"现在就做"）
-
-```text
-状态：建议删除，待你确认（替代方案见 A.18 required_calls）
-理由：它要求完整动作路线，和"终态达标即可"的判定口径冲突；
-      部分分可以用 conditions 进度（ΔΦ）算，行为要求可以用窄字段表达。
-```
-
-```json
-用户话："记住：我睡觉要关客厅灯；顺便把卧室灯调暗一点"
-"memory_expected": "睡觉时要关客厅灯"
-"action_steps": [{"device_id": "device_bedroom_lamp", "action": "set_percentage",
-                  "params": {"value": 30}}]
-```
-
-```text
-是什么    这一轮里"现在就执行"的动作序列，和记忆写入分开记账
-正例见上：关客厅灯进 memory_expected，调暗卧室灯进 action_steps
-反例      模型把"关客厅灯"现在就执行了 → 执行了不该现在做的事，判错
-          模型把"调暗台灯"写进记忆、不执行 → 漏了真实动作，判错
-谁写谁读  D 出题写；C 判定读
-```
-
-### A.14 session_turns
+### A.13 session_turns
 
 ```json
 "session_turns": 0     // 单轮任务（TC6A/TC6B/TC7A/TC7B）
@@ -428,17 +406,15 @@ A.18   required_calls     必须发生过的工具调用          待审      ta
 谁写谁读  D 设计写；C 的 runner 与 B 的会话模式读
 ```
 
-### A.15 turns[]（TC7C 的逐轮计划）
+### A.14 turns[]（TC7C 的逐轮计划）
 
 ```json
 "turns": [
   {"turn": 1, "goal": "记下睡觉要关客厅灯", "memory_op": "write",
-   "memory_expected": "睡觉时要关客厅灯", "action_steps": []},
+   "memory_expected": "睡觉时要关客厅灯"},
   {"turn": 2, "goal": "用记忆把客厅灯关掉", "memory_op": "read",
-   "action_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
    "conditions": [{"device_id": "device_living_light", "field": "on", "operator": "eq", "value": false}]},
-  {"turn": 3, "goal": "如实回答客厅灯状态", "memory_op": "read",
-   "action_steps": [], "conditions": []}
+  {"turn": 3, "goal": "如实回答客厅灯状态", "memory_op": "read", "conditions": []}
 ]
 ```
 
@@ -446,12 +422,13 @@ A.18   required_calls     必须发生过的工具调用          待审      ta
 子字段      turn          第几轮
             goal          这一轮要完成什么（不泄露给模型，判定用）
             memory_op     这一轮预期的记忆操作：write / read / none
-            memory_expected / action_steps / conditions   与前面单轮字段同义
+            memory_expected / conditions   与前面单轮字段同义
 判定        逐轮判：轮1 记忆写对没有；轮2 是否读了记忆并关灯；轮3 回答是否与状态一致
+行为检查    第2轮"必须读过记忆"由 A.17 required_calls 承担（待审）
 谁写谁读    D 设计写；C / D6 逐轮判定读
 ```
 
-### A.16 kind
+### A.15 kind
 
 ```json
 "kind": "TC6B"
@@ -463,7 +440,7 @@ A.18   required_calls     必须发生过的工具调用          待审      ta
           B 不按 kind 分支（只管世界初值）
 ```
 
-### A.17 轨迹侧新增（不是 task 字段，顺带说明）
+### A.16 轨迹侧新增（不是 task 字段，顺带说明）
 
 ```json
 {"session_id": "sess_0007", "turn_index": 2,
@@ -479,7 +456,9 @@ clock         这局的时间口径（冻结的 base_time / now）
 memory_before / memory_after   一次记忆读写前后的内容
 schedules     当前预约单快照
 这些都是 D5 落盘的轨迹字段，不进 task、不进 scenario
-### A.18 required_calls（最新提出，待审）
+```
+
+### A.17 required_calls（最新提出，待审）
 
 ```json
 {"tool": "memory", "op": "read"}                    // 必须成功读过记忆
@@ -495,7 +474,7 @@ schedules     当前预约单快照
 判定      出现至少一次成功调用 → 该检查通过；没出现 → 即使终态达标，
           也只给结果分、不给"行为分"
 谁写谁读  D 出题写；C / D6 判定读；模型看不到
-状态      待审：确认采用后，替换 A.13 action_steps 的作用
+状态      待审：确认采用后，用于 TC7A / TC7C 的"必须读过记忆"检查
 ```
 
 ## 附录 B 老字段速查（不是新增，读例子时会用到）
@@ -534,7 +513,7 @@ C.8    轮数上限 10 → 12               全部新任务按 12 轮           
                                       （代码与 A_policy 的 10 还未改）
 C.9    新增空气净化器                 只有 turn_on / turn_off，无档位            已写入 01/03
                                       （设备目录与 schema 还未加）
-C.10   required_calls                 替代 action_steps 的行为检查               待审
+C.10   required_calls                 必须发生过的调用（TC7A/TC7C 用）          待审
 C.11   tc_schema 版本号               新数据结构带版本（如 "v1"），老数据没有     待审
 C.12   B 侧时间转换器                 解析/格式化/比较/7 天窗口；严格拒绝非补零、
                                       带秒、带时区后缀；内部整数分钟；          待审（未建）
@@ -559,6 +538,8 @@ C.23   立即执行 vs 预约执行判定          TC6 该预约却立即执行 
 C.24   评测集规模与负例                 每子类 30 条起步；含过去时间、超 7 天、     已写入 03
                                       跨午夜、模糊表述等负例
 C.25   forbidden/required 的 schema    目前只有自然语言示例，数据结构未定          待定
+C.26   action_steps 删除               按 2026-10-10 审阅决定删除；             已删除
+                                      替代项为 required_calls（待审）
 ```
 
 ## 附录 D 已发生的改名映射（供你核对）
@@ -570,6 +551,6 @@ at_expected              at_time_expected     已改（01~04）
 steps（任务侧）           due_steps            已改（01~04）
 memory_seed              memory_initial       已改
 memory_write_expected    memory_expected      已改（03 里统一）
-action_steps             待定（建议删除）       待审
+action_steps             已删除（2026-10-10）     —
 接口 time_control.steps  不变                 保留原接口字段名
 ```
