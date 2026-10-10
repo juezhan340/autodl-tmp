@@ -7,145 +7,223 @@
 ## 0 一屏
 
 ```text
-推荐：三层拆分（方案 C）
+推荐：方案 4 —— 存储一体化 + 运行时按消费者拆分
 
-  判定真值（C / D6 要用）    → 并入 task（扩展 TaskSpec，字段可选）
-  例：at_time_expected、due_steps、memory_expected、forbidden_actions
+存储视角（D 的一条记录）
+  新增字段全部放在一个 tc 块里（带 tc_schema 版本）：
+  判定真值 + 世界初值 + 会话结构 + 生成元数据都在里面
 
-  世界初值（B reset 要用）    → 独立成一块（scenario.tc）
-                              例：base_time、memory_initial、session_turns、due_state
+运行时视角（D5 展开）
+  判定真值（C / D6 用）   → 并入 task（可选字段）
+  世界初值（B reset 用）  → scenario.world（base_time、memory_initial、
+                          session_turns、due_state）
+  生成元数据（只有 D 用）  → 蓝图 / 草稿，不进运行时
+  轨迹产物（D5 输出）     → session_id、turn_index、clock、memory 快照、schedules
 
-  生成元数据（只有 D 用）      → 只留在蓝图 / 草稿，不进 scenario
-                              例：time_type、time_mention、offset_minutes
-
-一句话：谁消费，就放在谁那一层；一个字段只放一处，不做冗余。
+一句话：存的时候一条记录一个 tc 块，跑的时候各消费者只读自己的层。
 ```
 
-## 1 先把字段和消费者盘清
+## 1 先盘清：新东西分四类，存储视角和运行时视角要分开看
 
 ```text
-字段              谁产生   谁消费                放哪（方案 C）
-time_type         D 出题   D（统计/复现）         蓝图
-time_mention           D 出题   D（审计）             蓝图
-offset_minutes    D 出题   D（算 at_time_expected）    蓝图
-base_time         D 抽样   B reset（→ now）       scenario.tc
-horizon_minutes   常量     B / C 校验             scenario.tc（或常量）
-at_time_expected       D 出题   C / D6 判定            task
-due_steps         D 出题   C 判定（部分分依据）     task
-memory_initial    D 生成   B reset（→ memory）    scenario.tc
-memory_expected   D 出题   C / D6 判定            task
-session_turns     D 设计   C runner / B 会话模式   scenario.tc
-due_state         D 出题   C 结算（影子执行）      scenario.tc
-forbidden/required D 出题  C 判定（TC7A 约束）     task
+类别            例子                                                  谁用
+判定真值        at_time_expected、due_steps、memory_expected、        C / D6 判定
+                forbidden_actions、required_effects、required_calls、
+                turns[] 里的逐轮真值
+世界初值        base_time、memory_initial、session_turns、            B reset / C 结算
+                due_state、horizon_minutes（常量）
+生成元数据      time_type、time_mention、offset_minutes、             D 审计 / 复现
+                memory 生成理由、kind（标签）
+轨迹产物        session_id、turn_index、clock、memory_before/after、   D5 落盘 / 分析
+                schedules、影子结果
 ```
 
-判断规则：字段被 C/D6 用来"判对错"→ 进 task；被 B 用来"初始化世界"→ 进 scenario.tc；
-只用来记录"这题是怎么造出来的"→ 留在蓝图。
+```text
+两个视角要分开看：
+  存储视角    数据文件里怎么放（D 写出去、后面读回来）
+  运行时视角  D5 跑一局时，B / C / D6 各自从哪个对象里读
 
-## 2 三种方案
+同一个字段在两个视角里可以放在不同层。例如 base_time：
+  存储时放在一条记录的 tc 块里；
+  运行时被 D5 展开成 scenario.world.base_time，专门给 B 用。
+```
 
-### 2.1 方案 A：全部并入 task
+## 2 五种方案（基于完整清单重定）
+
+### 2.1 方案 1：全部并进 task（一个箱子）
 
 ```text
 task: {
-  intent, conditions, keep, required_observations, expected_finish,
-time_type, time_mention, offset_minutes, base_time, at_time_expected,
-due_steps, memory_initial, memory_expected, session_turns, due_state
+  老 5 个字段,
+  time_type, time_mention, offset_minutes, at_time_expected, base_time,
+  horizon_minutes, due_steps, due_state, memory_initial, memory_expected,
+  forbidden_actions, required_effects, required_calls, session_turns,
+  turns[], kind
 }
 ```
 
 ```text
 优点   一条记录只翻一个箱子；数据集自含；C/D6 只读 task
-缺点   task 现在的语义是"隐藏目标，只给 C 看"；把 base_time、memory_initial
-       这类"世界初值"混进去以后，B 的 reset 也要读 task，语义变模糊；
-       TaskSpec 必须扩展，而且它同时被 D6、评测、统计脚本引用，改动面最大；
+缺点   task 的语义是"隐藏目标，只给 C 看"；base_time / memory_initial 这类
+       世界初值混进来后，B 也要读 task，语义变模糊；TaskSpec 改动最大；
        生成元数据（time_mention / offset）也进 task 的话，判定侧会看到用不到的字段
 ```
 
-### 2.2 方案 B：全部独立成 scenario.tc（task 完全不动）
+### 2.2 方案 2：全部独立成一块（task 完全不动）
 
 ```text
-task: { intent, conditions, keep, required_observations, expected_finish }   ← 原样
-tc:   { kind, time_type, time_mention, offset_minutes, base_time, at_time_expected,
-        due_steps, memory_initial, memory_expected, session_turns, due_state }
+task:  { intent, conditions, keep, required_observations, expected_finish }   ← 原样
+ext:   { kind, time_type, time_mention, offset_minutes, base_time, at_time_expected,
+         due_steps, due_state, memory_initial, memory_expected, forbidden_actions,
+         required_effects, required_calls, session_turns, turns[] }
 ```
 
 ```text
-优点   完全不动老 TaskSpec、老数据、老判定；B 只读 tc；隔离最彻底
+优点   完全不动老 TaskSpec、老数据、老判定；隔离最彻底
 缺点   "判定真值"和"任务目标"被拆到两个箱子：C/D6 要同时读 task（conditions）
-       和 tc（at_time_expected / memory_expected），漏读一个就判错；
-       task 的概念被拆散，后续 T1~T5 若也要扩展会冒出第二套模式
+       和 ext（at_time_expected / memory_expected / required_calls），漏读就判错；
+       task 概念被拆散，以后 T1~T5 想扩展会冒出第二套模式
 ```
 
-### 2.3 方案 C：三层拆分（推荐）
+### 2.3 方案 3：按消费者三层（旧方案 C）
 
 ```text
-task: {
-  intent, conditions, keep, required_observations, expected_finish,   ← 老字段不动
-  at_time_expected, due_steps, memory_expected, forbidden_actions, required_effects   ← 新增可选字段
-}
+task:           判定真值（at_time_expected、due_steps、memory_expected、
+                forbidden_actions、required_effects、required_calls、turns 真值）
+scenario.world: 世界初值（base_time、memory_initial、session_turns、due_state）
+蓝图：          生成元数据（time_type、time_mention、offset_minutes、kind）
+```
 
-scenario.tc: {
-  kind, base_time, horizon_minutes, memory_initial, session_turns, due_state
-}
+```text
+优点   每个字段只有一个消费者层级：C/D6 读 task；B 读 world；D 读蓝图；
+       老数据零影响；B 不需要理解目标，只读世界初值
+缺点   覆盖不完整：session_turns / turns[] / kind / due_state 的"家"没写清；
+       turns[] 里既有会话结构又有逐轮真值，需要额外规则；
+       TaskSpec 仍要做一次可选字段扩展
+```
 
-蓝图 / 草稿（不进 scenario）: { time_type, time_mention, offset_minutes }
+### 2.4 方案 4：存储一体化 + 运行时按消费者拆分（推荐）
+
+```text
+存储视角（D 的一条记录）
+  一个 tc 块装下全部新字段（判定真值 + 世界初值 + 会话结构 + 生成元数据）
+  用 tc_schema 标版本
+
+运行时视角（D5 展开）
+  task            ← 判定真值（含 required_calls、turns 的逐轮真值）
+  scenario.world  ← base_time、memory_initial、session_turns、due_state
+  蓝图（不传 B）  ← time_type、time_mention、offset_minutes、kind
+  轨迹（D5 输出） ← session_id、turn_index、clock、memory_before/after、schedules
 ```
 
 ```text
 优点
-  每个字段只有一个消费者层级：C/D6 读 task；B 读 tc；D 读蓝图
-  老数据零影响：新字段是可选的，老 task 照旧 without 新键
-  B 不需要理解"目标"，只需要读世界初值；task 不需要掺杂运行参数
-  判定真值和目标条件都在 task 里，C/D6 不用跨箱找
+  D 侧只维护一条记录、一个 tc 块，落盘与审计简单
+  运行时每个消费者只读自己那层，B 不接触目标，C/D6 不跨箱找真值
+  老数据完全不受影响：老记录没有 tc 块，TaskSpec 新字段有值才输出
 缺点
-  TaskSpec 要做一次"可选字段"扩展（向后兼容）；
-  文档要写清三层的映射表（就是本文第 1 节）
+  多一层"展开"逻辑：存 tc、跑时拆成 task/world；展开代码是唯一真源，必须配测试
+  tc_schema 版本与两套视图的映射要写进文档（就是本文第 1 节与第 4 节）
 ```
 
-### 2.4 方案 C 的命名建议
+### 2.5 方案 5：会话拆成"每轮一个任务"（TC7C 变体）
 
 ```text
-scenario.tc 这个名字里"tc"是任务族标签，放在"世界初值"这个用途上略绕。
-两个选择：
-  C1  沿用 scenario.tc（不再改名，语义按本文第 1 节的表）
-  C2  改名 scenario.world（世界初值），文档里 tc 只保留 TC6/TC7 类别含义
-建议 C2；如果你不想再动名字，C1 也能用，只是看的人要记住"tc=世界初值"。
+存储    一个 session 记录 + N 条 turn 记录，session_id / turn_index 关联
+判定    每条 turn 记录独立判定，会话级约束（记忆保留）放在 session 记录
 ```
 
-## 3 对比表
-
 ```text
-维度              方案 A 全并 task        方案 B 全独立 tc        方案 C 三层拆分
-老数据兼容        需要 TaskSpec 扩展       完全不动                 TaskSpec 加可选字段，老数据不变
-B 的读取          B 要读 task              B 只读 tc               B 只读 tc
-C/D6 读取         只读 task                同时读 task + tc        只读 task（真值全在 task）
-语义清晰度        task 混杂三类语义        "任务"被拆成两半        每层单一职责
-生成元数据       也进 task（冗余）        也进 tc（冗余）          留在蓝图，不进运行数据
-改动面           最大（TaskSpec 多处引用） 最小                    中等（TaskSpec 一次扩展）
-后续扩展性        容易继续堆字段           新老两套模式            新字段按消费者归位
+优点   每轮独立计分、独立部分分；和多轮 runner 天然对齐；
+       失败归因直接落到某一轮，不用在 turns[] 数组里找
+缺点   数据集行数变多；会话级统计要 join；session 与 turn 的一致性要额外校验
+建议   作为二期可选：TC7C 规模变大、或要求每轮独立训练信号时再切；
+       本期先用方案 4 的 turns[] 放 task
 ```
 
-## 4 落地细节（方案 C）
+## 3 对比表（五方案 × 八个维度）
 
 ```text
-TaskSpec 扩展
-  新增可选字段：at_time_expected、due_steps、memory_expected、forbidden_actions、required_effects
-  to_dict 只在字段有值时输出新键 → 老 task 的 JSON 与指纹保持逐字不变
-  from_dict 缺省为空 → 老数据读取路径不受影响
+维度              方案1 全并task     方案2 全独立块    方案3 三层       方案4 存储一体化+运行时拆（推荐） 方案5 每轮一任务
+老数据兼容        差（大改TaskSpec）  最好（不动）      好（可选扩展）    最好（老数据完全不碰）            中
+B 的读取          task               ext              world            world                            world
+C/D6 读取         task               task + ext       task             task                             task（每轮）
+存储复杂度        低（一箱）          低（一箱）        中（三处）        低（一条 tc 块）                  高（session+turn 两表）
+运行时清晰度      差（语义混杂）      差（跨箱找真值）   好               最好（每层单一消费者）             好
+会话支持          中                 中               弱（turns 没家）  好（world 里的会话结构）           最好
+生成审计          混在 task          混在 ext         干净（蓝图）      干净（蓝图，不传运行时）           干净
+落地工作量        大                 小               中               中（多一层展开逻辑）              大
+```
 
-scenario.tc
-  B.reset 只读：base_time、memory_initial、session_turns
-  C 判定读：at_time_expected / due_steps / memory_expected（在 task 里）
-  due_state 给结算用；没有就按当前状态影子执行（掉线不处理）
+## 4 推荐方案 4 的落地细节
 
-蓝图 / 草稿
-  保留 time_type、time_mention、offset_minutes 与 memory 的生成理由，
-  用于复现、审计与失败重放；D5 之后的轨迹与数据集不再带这些生成元数据
+### 4.1 存储视图（D 的一条记录）
 
-版本与指纹
-  TC 数据结构加一个版本号（例如 tc_schema: "v1"），
-  老数据没有该键，指纹逻辑不变；新老数据可以共存
+```json
+{
+  "scenario_id": "sc_TC6B_007",
+  "home": { "...": "..." },
+  "user_request": "40 分钟后把加湿器关掉",
+  "task": { "intent": "...", "conditions": [], "keep": [],
+            "required_observations": [], "expected_finish": {} },
+  "episode_config": { "max_turns": 12, "max_tool_calls_per_turn": 1 },
+  "tc": {
+    "tc_schema": "v1",
+    "kind": "TC6B",
+    "base_time": "2026-10-10 09:30",
+    "horizon_minutes": 10080,
+    "time_type": "relative",
+    "time_mention": "40分钟后",
+    "offset_minutes": 40,
+    "at_time_expected": "2026-10-10 10:10",
+    "due_steps": [{"device_id": "device_bedroom_humidifier", "action": "turn_off", "params": {}}],
+    "memory_initial": "",
+    "memory_expected": "",
+    "forbidden_actions": [],
+    "required_effects": [],
+    "required_calls": [],
+    "session_turns": 0,
+    "turns": [],
+    "due_state": null
+  }
+}
+```
+
+### 4.2 运行时视图（D5 展开成三份）
+
+```text
+task             += at_time_expected / due_steps / memory_expected /
+                    forbidden_actions / required_effects / required_calls /
+                    turns 的逐轮真值
+scenario.world    = { base_time, memory_initial, session_turns,
+                      due_state, horizon_minutes }
+蓝图（不进运行时）  = { kind, tc_schema, time_type, time_mention, offset_minutes }
+轨迹（D5 写）      = { session_id, turn_index, clock, memory_before/after,
+                      schedules, 影子结果 }
+```
+
+### 4.3 老数据与非冲突
+
+```text
+老记录没有 tc 块 → 展开逻辑直接跳过，行为与现在完全一致
+TaskSpec 新字段缺省为空、有值才输出 → 老 task 的 JSON 与指纹逐字不变
+tc 块缺失时，B / C / D6 的行为与现在完全一致
+```
+
+### 4.4 命名与版本
+
+```text
+存储块名       tc（或 ext），带 tc_schema: "v1"
+运行时世界块   scenario.world（推荐）；不想改名就沿用 scenario.tc
+任务真值       平铺在 task 下（at_time_expected、due_steps…），不再套一层
+```
+
+### 4.5 TC7C 的 turns 归属
+
+```text
+turns[] 的逐轮真值（memory_expected、conditions、required_calls）→ 放 task
+会话结构（轮数、顺序）→ 放 scenario.world 的 session 配置
+如果以后要"每轮独立计分、独立训练信号"，再评估方案 5
 ```
 
 ## 5 和 due_state、记忆生成的关系
@@ -160,12 +238,12 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 ## 6 待拍板
 
 ```text
-1  采用方案 C 吗？还是选 A / B？
-2  scenario.tc 是否改名为 scenario.world（推荐改，语义更直白）？
-3  task 里的新字段是平铺（at_time_expected 直接放在 task 下）还是再套一层 tc_truth？
-   建议平铺，字段少、读取直接；如果以后字段多了再考虑分组
-4  due_steps 是否作为判定真值参与部分分（比对模型写的 steps），还是只用于影子执行？
-   影响 due_steps 是否必须进 task
+1  采用哪个方案：1 / 2 / 3 / 4 / 5？推荐方案 4（存储一体化 + 运行时按消费者拆分）
+2  存储块叫什么：tc / ext / 其它？带不带 tc_schema 版本号？
+3  运行时世界块叫什么：scenario.world（推荐）还是沿用 scenario.tc？
+4  task 里的新字段平铺（推荐）还是套一层？套一层的话叫什么？
+5  due_steps 是否参与部分分（比对模型写的 steps），还是只用于影子执行？
+6  TC7C 先按 turns[] 放 task（推荐），还是直接上方案 5 的"每轮一个任务"？
 ```
 
 ---
@@ -521,7 +599,7 @@ C.12   B 侧时间转换器                 解析/格式化/比较/7 天窗口�
                                       带秒、带时区后缀；内部整数分钟；          待审（未建）
                                       建议单模块 B_clock，B 与 D 共用
 C.13   scenario.tc 改名候选           改名 scenario.world（语义更直白）          待审
-C.14   TaskSpec 可选字段扩展           新字段有值才输出，老 JSON 指纹逐字不变      待审（方案 C 相关）
+C.14   TaskSpec 可选字段扩展           新字段有值才输出，老 JSON 指纹逐字不变      待审（方案 4 相关）
 C.15   新目录与新文件                  data_tc/、D0_templates_tc/、              已写入 03
                                       data_raw_tc/、data_processed_tc/、
                                       eval_sets/TC_20261010_v1/
@@ -669,8 +747,8 @@ C.26   action_steps 删除               按 2026-10-10 审阅决定删除；   
 ```text
 是什么   task 增加可选字段（at_time_expected、due_steps、memory_expected 等）
 例子     新 task 有这些键；老 task 没有，to_dict 不输出，老 JSON 指纹逐字不变
-影响     方案 C 的落地前提；改动在 B_models.TaskSpec 与同名 md
-状态     待审（方案 C 相关）
+影响     方案 4 的落地前提；改动在 B_models.TaskSpec 与同名 md
+状态     待审（方案 4 相关）
 ```
 
 ### C.15 新目录与新文件
