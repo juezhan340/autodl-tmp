@@ -232,7 +232,7 @@ D      任务真值 + 数据落盘：base_time、memory_seed、
 ```text
 数据流：
   D 写任务文件（持久）
-    blueprint / task: {home, base_time, memory_seed, expected, due_state}
+    blueprint / task: {home, tc:{base_time, memory_seed, session...}, expected, due_state}
         │ D5 运行时读取任务并交给 C
         ▼
   C 编排（不存数据）
@@ -256,15 +256,16 @@ reset 前后对照：
 
 以后 reset(scenario)
   devices   ← scenario.home 的副本
-  now       ← scenario.base_time（整个会话不变）
-  memory    ← scenario.memory_seed
+  now       ← scenario.tc.base_time（整个会话不变）
+  memory    ← scenario.tc.memory_seed
   schedules ← []
 ```
 
 几条规则：
 
 ```text
-reset 签名不变，还是 reset(scenario)；变的是 scenario 多了字段，B_schema 同步扩展。
+reset 签名不变，还是 reset(scenario)；变的是 scenario 多了可选字段块 scenario.tc，
+B 从这块里读 base_time / memory_seed / 会话配置，B_schema 同步扩展。
 reset 次数由 C 决定：单轮任务一次；多轮任务一个会话一次，轮与轮之间不 reset。
 会话结束 B 的运行时状态直接丢弃，不落盘；持久化的只有 D 的任务文件与 D5 的轨迹。
 inspect_time / time_control / memory 都是 B 的工具路由，与 execute_action 平级；
