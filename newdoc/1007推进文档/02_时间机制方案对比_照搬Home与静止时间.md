@@ -289,7 +289,7 @@ B 仿真器
 C 回合引擎
   加一个 TC6 判定器：at 正确性（与任务期望比对）+ steps 正确性 + 影子结果；
   reset 次数由 C 控制：单轮一次、多轮每会话一次；结算时由 C 调 B 的影子执行；
-  runner 循环不变（仍然单 episode、最多 10 轮、finish 收尾）；
+  runner 循环不变（仍然单 episode、最多 12 轮、finish 收尾）；
   多轮会话是 TC7 的改造，和 TC6 无关。
 
 A 策略
