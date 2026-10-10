@@ -4,7 +4,7 @@
 > 判定真值写进 task、世界初值写进 world、生成元数据留在 gen（蓝图）。
 > 名词按 2026-10-10 定稿：time_mention、at_time_expected、offset_minutes、due_steps、due_state、
 > memory_initial、memory_expected、forbidden_actions、required_effects、required_calls（待审）、
-> session_turns、turns[]、kind、tc_schema。
+> session_turns、turns[]、kind（落盘沿用老键名 category）、tc_schema。
 > 本文只走两类：TC6A（绝对时间一次性预约）与 TC7A（读预置记忆），从提示词到轨迹到数据集完整呈现。
 
 ## 0 一屏
@@ -54,27 +54,57 @@ TC_dataset.jsonl（存 task 真值 + world 初值 + 轨迹 + 标签）
 约束   同一任务只冻结一个 base_time；记忆必须与 s0 吻合
 ```
 
-### 1.2 存储结构与运行时结构（方案 3：写入时分层）
+### 1.2 蓝图与运行时结构（方案 3：写入时分层，对齐现有蓝图）
+
+```text
+现有蓝图（D4_blueprints.jsonl）的真实字段：
+  blueprint_id / category / home / task / user_request
+  home 就是 s0：房间、设备、每台设备的初始 state 全在里面
+  画像不落蓝图（只在 D2 出题时用）
+
+方案 3 在现有蓝图上新增两个块：
+  world   世界初值（B reset 用）
+  gen     生成元数据（D 审计用）
+  判定真值按现有惯例写进 task
+```
 
 ```json
-// D 的一条记录（蓝图）：写入时就已经分好层
 {
-  "scenario_id": "sc_TCxA_0001",
-  "blueprint_id": "bp_TCxA_0001",
-  "tc_schema": "v1",
-  "kind": "TC6A",
-  "home": { "...": "..." },
-  "user_request": "（D2-2 写出来后填这里）",
-  "episode_config": { "max_turns": 12, "max_tool_calls_per_turn": 1 },
+  "blueprint_id": "bp_TC6A_0001",
+  "category": "TC6A",
+  "home": {
+    "rooms": [
+      {"room_id": "room_living", "display_name": "客厅",
+       "device_ids": ["device_living_light"]},
+      {"room_id": "room_bedroom", "display_name": "卧室",
+       "device_ids": ["device_bedroom_climate", "device_bedroom_purifier",
+                      "device_bedroom_humidifier"]}
+    ],
+    "devices": [
+      {"device_id": "device_living_light", "room_id": "room_living",
+       "display_name": "客厅主灯", "kind": "actuator", "device_type": "light",
+       "state": {"on": true, "mode": "bright"},
+       "actions": [{"action": "turn_on", "params": {}},
+                   {"action": "turn_off", "params": {}}],
+       "available": true}
+    ]
+  },
   "task": {
-    "intent": "...", "conditions": [], "keep": [],
-    "required_observations": [], "expected_finish": {},
+    "intent": "今晚睡前把客厅灯关掉",
+    "conditions": [{"device_id": "device_living_light", "field": "on",
+                    "operator": "eq", "value": false}],
+    "keep": [],
+    "required_observations": [],
+    "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
     "at_time_expected": "2026-10-10 22:00",
     "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
     "memory_expected": "",
-    "forbidden_actions": [], "required_effects": [], "required_calls": [],
+    "forbidden_actions": [],
+    "required_effects": [],
+    "required_calls": [],
     "turns": []
   },
+  "user_request": "今晚10点帮我把客厅灯关掉吧。",
   "world": {
     "base_time": "2026-10-10 09:30",
     "horizon_minutes": 10080,
@@ -83,6 +113,7 @@ TC_dataset.jsonl（存 task 真值 + world 初值 + 轨迹 + 标签）
     "due_state": null
   },
   "gen": {
+    "tc_schema": "v1",
     "time_mention": "今晚10点",
     "offset_minutes": null
   }
@@ -90,15 +121,23 @@ TC_dataset.jsonl（存 task 真值 + world 初值 + 轨迹 + 标签）
 ```
 
 ```text
-运行时（D5 只做搬运与校验，不再拆分）
-  scenario.task   ← 记录里的 task（判定真值原样带过去）
-  scenario.world  ← 记录里的 world（B reset 只读这块）
-  蓝图（不传 B）   ← 记录里的 gen / kind / tc_schema
-  轨迹（D5 写）    ← session_id / turn_index / clock / memory_before/after / schedules
+D5 组装运行时 scenario（对齐现有 blueprint_to_scenario）：
+  scenario_id      D5 新生成
+  blueprint_id     ← blueprint.blueprint_id
+  home             ← blueprint.home（s0 原样）
+  user_request     ← blueprint.user_request
+  task             ← blueprint.task（含新增判定真值）
+  episode_config   ← {max_turns: 12, max_tool_calls_per_turn: 1}
+                     （老代码写死 10，要改）
+  world            ← blueprint.world（新增；B reset 只读这块）
+  gen / category   只留在蓝图，不传 B
+  轨迹（D5 写）     ← session_id / turn_index / clock / memory_before/after / schedules
 
-写入时就分层意味着：D2-1 / D4 出题时要负责把字段放对位置——
-真值进 task、初值进 world、元数据进 gen；
-D5 只做搬运和 schema 校验，不做"从一个大块拆开"的动作。
+两点对齐说明：
+  1  现有蓝图没有 persona；TC7A 的 memory_initial 依赖画像，
+     建议蓝图新增 persona_id（或 persona 全量）用于审计——这是新增项，待确认
+  2  现有蓝图用 category 键；新文档里叫 kind 的是同一个东西，
+     落盘建议沿用 category，避免两套键名
 ```
 
 ### 1.3 A 提示词装配（不改老提示词）
@@ -126,7 +165,7 @@ TC6A 是什么
 本局时间冻结：base_time 就是"现在"，不会流逝。
 
 输出字段
-{"kind":"TC6A", "intent":"一句话目标",
+{"intent":"一句话目标",
  "time_mention":"用户话里的时间说法",
  "at_time_expected":"YYYY-MM-DD HH:MM",
  "due_steps":[{"device_id":"...","action":"...","params":{}}],
@@ -139,6 +178,7 @@ TC6A 是什么
   time_mention 不能是"每晚/每天"这类持久规则；出现直接判废
   time_mention 不能直接写标准时刻（那是答案，不是题面说法）
   conditions 描述"到点执行后终态应满足什么"
+  注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC6A）
 
 小例子（base_time = 2026-10-10 09:30）
 对  time_mention="今晚10点" → at_time_expected="2026-10-10 22:00"
@@ -154,7 +194,7 @@ TC6A 是什么
            "device_bedroom_purifier","device_bedroom_humidifier"]}], "devices":[...]}
 本轮 base_time："2026-10-10 09:30"
 正确输出：
-{"kind":"TC6A","intent":"今晚睡前把客厅灯关掉",
+{"intent":"今晚睡前把客厅灯关掉",
  "time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
  "due_steps":[{"device_id":"device_living_light","action":"turn_off","params":{}}],
  "conditions":[{"device_id":"device_living_light","field":"on","operator":"eq","value":false}],
@@ -171,8 +211,7 @@ base_time：{{base_time}}
 ### 2.2 D2-1 输出（TC6A 的真实 task）
 
 ```json
-{"kind": "TC6A",
- "intent": "今晚睡前把客厅灯关掉",
+{"intent": "今晚睡前把客厅灯关掉",
  "time_mention": "今晚10点",
  "at_time_expected": "2026-10-10 22:00",
  "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
@@ -203,7 +242,7 @@ base_time：{{base_time}}
 
 完整例子
 intent：今晚睡前把客厅灯关掉
-task：{"kind":"TC6A","time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
+task：{"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
       "due_steps":[{"device_id":"device_living_light","action":"turn_off","params":{}}]}
 可用显示名：客厅主灯、卧室空调、卧室空气净化器、卧室加湿器
 正确输出：今晚10点帮我把客厅灯关掉吧。
@@ -320,7 +359,7 @@ TC6A 附加段内容
 ### 2.10 进数据集
 
 ```json
-{"scenario_id": "sc_TC6A_0001", "kind": "TC6A",
+{"scenario_id": "sc_TC6A_0001", "category": "TC6A",
  "user_request": "今晚10点帮我把客厅灯关掉吧。",
  "task": {"at_time_expected": "2026-10-10 22:00",
                 "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
@@ -345,7 +384,7 @@ TC7A 是什么
 用户请求本身不会复述这段内容，助手要先读记忆，再按记忆约束行动。
 
 输出字段
-{"kind":"TC7A", "intent":"一句话目标",
+{"intent":"一句话目标",
  "memory_initial":"开局记忆里已有的内容",
  "forbidden_actions":["不许做的动作"],
  "required_effects":["必须达成的效果"],
@@ -359,6 +398,7 @@ TC7A 是什么
   memory_initial 与用户请求相关，但请求不能直接复述它
   forbidden_actions 1~2 条，必须是 s0 里真实存在设备的动作
   required_effects 1~2 条，必须是终态可检查的效果
+  注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC7A）
 
 小例子
 对  memory_initial="用户对花粉过敏，别开窗；闷了先开空气净化器"
@@ -372,7 +412,7 @@ TC7A 是什么
 本轮 s0：{"rooms":[{"room_id":"room_bedroom","device_ids":["device_bedroom_climate",
           "device_bedroom_purifier","device_bedroom_humidifier"]}], "devices":[...]}
 正确输出：
-{"kind":"TC7A","intent":"卧室闷，按记忆优先开净化器而不是开窗",
+{"intent":"卧室闷，按记忆优先开净化器而不是开窗",
  "memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器",
  "forbidden_actions":["开窗通风类动作"],
  "required_effects":["device_bedroom_purifier on=true"],
@@ -390,8 +430,7 @@ base_time：{{base_time}}
 ### 3.2 D2-1 输出（TC7A 的真实 task）
 
 ```json
-{"kind": "TC7A",
- "intent": "卧室闷，按记忆优先开净化器而不是开窗",
+{"intent": "卧室闷，按记忆优先开净化器而不是开窗",
  "memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
  "forbidden_actions": ["开窗通风类动作"],
  "required_effects": ["device_bedroom_purifier on=true"],
@@ -423,7 +462,7 @@ base_time：{{base_time}}
 
 完整例子
 intent：卧室闷，按记忆优先开净化器而不是开窗
-task：{"kind":"TC7A","memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器", ...}
+task：{"memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器", ...}
 可用显示名：卧室空调、卧室空气净化器、卧室加湿器
 正确输出：卧室有点闷，帮我想想办法。
 
@@ -544,7 +583,7 @@ TC7A 附加段内容
 ### 3.10 D6 输出与进数据集
 
 ```json
-{"scenario_id": "sc_TC7A_0001", "kind": "TC7A",
+{"scenario_id": "sc_TC7A_0001", "category": "TC7A",
  "user_request": "卧室有点闷，帮我想想办法。",
  "task": {"memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
                 "forbidden_actions": ["开窗通风类动作"],
@@ -587,4 +626,6 @@ TC7A 附加段内容
 3  TC7A 的 forbidden_actions / required_effects 数据结构（现在例子是字符串列表）
 4  空气净化器落地（设备目录 + B_schema + A 提示词设备常识）
 5  轮数上限 12 的代码改动（B_models / B_schema / D4 / D5 / A_policy / 评测 runner）
+6  蓝图是否新增 persona_id（TC7A 的 memory_initial 依赖画像，现有蓝图不存画像）
+7  kind 与 category 统一用哪个键（现有蓝图用 category，新文档用 kind）
 ```

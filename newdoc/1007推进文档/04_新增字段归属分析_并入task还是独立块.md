@@ -280,7 +280,7 @@ A.11   forbidden_actions  记忆约束下不许做的动作        已写入    
 A.12   required_effects   记忆驱动必须达成的效果        已写入    task
 A.13   session_turns      会话轮数                      已写入    scenario.tc
 A.14   turns[]            TC7C 逐轮计划                 已写入    task/scenario
-A.15   kind               TC6A…TC7C 类别标签           已写入    scenario.tc
+A.15   kind               TC6A…TC7C 类别标签（落盘沿用 category） 已写入  蓝图顶层
 A.16   轨迹侧新增         session_id / turn_index /      已写入    D5 轨迹
                           clock / memory_before/after / schedules
 A.17   required_calls     必须发生过的工具调用          待审      task
@@ -512,6 +512,7 @@ action_steps 已在 2026-10-10 按审阅决定删除；替代方案是 A.17 requ
 
 ```text
 是什么    这道题的类别标签：TC6A/TC6B/TC7A/TC7B/TC7C
+落盘      沿用老蓝图的键名 category（现有蓝图用 category，新文档叫 kind，建议统一 category）
 谁写谁读  D 写；D（选模板/账本）与 C（选判定）读；
           B 不按 kind 分支（只管世界初值）
 ```
