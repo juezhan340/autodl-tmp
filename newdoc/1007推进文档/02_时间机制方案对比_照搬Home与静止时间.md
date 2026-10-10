@@ -225,14 +225,14 @@ B      世界状态：设备状态 + 冻结时间 now + 预约单列表 + 记忆
        execute_action / inspect_time / time_control / memory   单 episode / 单会话
 C      会话编排与判定：turns 记录、收取 finish、条件比对、
        调用 B 的影子执行结算；自己不另存时间或记忆             单 episode / 会话
-D      任务真值 + 数据落盘：base_time、memory_seed、
+D      任务真值 + 数据落盘：base_time、memory_initial、
        expected.at / steps、due_state、轨迹文件、数据集          跨批次，写文件
 ```
 
 ```text
 数据流：
   D 写任务文件（持久）
-    blueprint / task: {home, tc:{base_time, memory_seed, session...}, expected, due_state}
+    blueprint / task: {home, tc:{base_time, memory_initial, session...}, expected, due_state}
         │ D5 运行时读取任务并交给 C
         ▼
   C 编排（不存数据）
@@ -242,7 +242,7 @@ D      任务真值 + 数据落盘：base_time、memory_seed、
   B 运行时（内存，单会话）                        D5 落盘（轨迹文件，持久）
     reset 初始化：devices   ← home 副本
                   now       ← base_time（整个会话冻结）
-                  memory    ← memory_seed（类1 有内容，类2/3 空）
+                  memory    ← memory_initial（类1 有内容，类2/3 空）
                   schedules ← []
         ▲
         │ A 通过工具读写；A 不知道这些数据存在哪
@@ -257,7 +257,7 @@ reset 前后对照：
 以后 reset(scenario)
   devices   ← scenario.home 的副本
   now       ← scenario.tc.base_time（整个会话不变）
-  memory    ← scenario.tc.memory_seed
+  memory    ← scenario.tc.memory_initial
   schedules ← []
 ```
 
@@ -265,7 +265,7 @@ reset 前后对照：
 
 ```text
 reset 签名不变，还是 reset(scenario)；变的是 scenario 多了可选字段块 scenario.tc，
-B 从这块里读 base_time / memory_seed / 会话配置，B_schema 同步扩展。
+B 从这块里读 base_time / memory_initial / 会话配置，B_schema 同步扩展。
 reset 次数由 C 决定：单轮任务一次；多轮任务一个会话一次，轮与轮之间不 reset。
 会话结束 B 的运行时状态直接丢弃，不落盘；持久化的只有 D 的任务文件与 D5 的轨迹。
 inspect_time / time_control / memory 都是 B 的工具路由，与 execute_action 平级；
@@ -284,7 +284,7 @@ base_time 与 now 的关系：
 B 仿真器
   加三个世界状态字段（冻结时间 now / 记忆文本 / 预约单列表）+ 三个工具路由
   （inspect_time / time_control / memory）+ 预约校验与影子执行函数；
-  reset 从 scenario 读 base_time / memory_seed 完成初始化，B_schema 同步扩展；
+  reset 从 scenario 读 base_time / memory_initial 完成初始化，B_schema 同步扩展；
   设备状态引擎与原有四个工具不动；不需要时钟循环、事件队列、状态演化。
 
 C 回合引擎
@@ -299,7 +299,7 @@ A 策略
 
 D 数据管线
   D0 加 TC6 模板；D2 的 task 增加"时间类型（绝对/相对）+ 偏移/时刻 + steps"；
-  TC7 还需要 memory_seed；TC6 可选 due_state（到点状态快照）；
+  TC7 还需要 memory_initial；TC6 可选 due_state（到点状态快照）；
   D4 复用同一套校验器（不跑快进）；D5 轨迹加 clock / schedule / memory 快照 /
   session_id / turn_index；
   D6 对 TC6 基本可跳过（规则可验证）。
