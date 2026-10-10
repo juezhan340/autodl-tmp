@@ -181,6 +181,36 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 > 客厅：主灯 device_living_light
 > ```
 
+### A.0 清单总表（含最新提出项，先审这个）
+
+```text
+状态说明
+  已写入   01~03 文档里已经有了
+  待审     最近讨论新提出，还没写进 01~03 正文，只在本表与后面小节里
+  建议删   提出删除，等你确认
+
+编号   名称               一句话                        状态      属于哪一层
+A.1    time_type          绝对/相对时间类型             已写入    task/蓝图
+A.2    time_mention       用户话里的时间说法            已写入    蓝图
+A.3    at_time_expected   标准答案时刻                  已写入    task
+A.4    offset_minutes     相对偏移分钟数                已写入    蓝图
+A.5    base_time          冻结的场景起始时间            已写入    scenario.tc
+A.6    horizon_minutes    7 天窗口上限                  已写入    scenario.tc
+A.7    due_steps          TC6 期望的预约动作序列        已写入    task
+A.8    due_state          到点状态快照（不含掉线）       已写入    scenario.tc
+A.9    memory_initial     开局记忆内容                  已写入    scenario.tc
+A.10   memory_expected    应该写进记忆的内容            已写入    task
+A.11   forbidden_actions  记忆约束下不许做的动作        已写入    task
+A.12   required_effects   记忆驱动必须达成的效果        已写入    task
+A.13   action_steps       TC7 现在就做的动作序列        建议删    task
+A.14   session_turns      会话轮数                      已写入    scenario.tc
+A.15   turns[]            TC7C 逐轮计划                 已写入    task/scenario
+A.16   kind               TC6A…TC7C 类别标签           已写入    scenario.tc
+A.17   轨迹侧新增         session_id / turn_index /      已写入    D5 轨迹
+                          clock / memory_before/after / schedules
+A.18   required_calls     必须发生过的工具调用          待审      task
+```
+
 ### A.1 time_type
 
 ```json
@@ -364,6 +394,12 @@ due_state  只保留"目标已达成 / 被别人改过"两种情况；掉线不�
 
 ### A.13 action_steps（TC7B / TC7C 的"现在就做"）
 
+```text
+状态：建议删除，待你确认（替代方案见 A.18 required_calls）
+理由：它要求完整动作路线，和"终态达标即可"的判定口径冲突；
+      部分分可以用 conditions 进度（ΔΦ）算，行为要求可以用窄字段表达。
+```
+
 ```json
 用户话："记住：我睡觉要关客厅灯；顺便把卧室灯调暗一点"
 "memory_expected": "睡觉时要关客厅灯"
@@ -443,6 +479,23 @@ clock         这局的时间口径（冻结的 base_time / now）
 memory_before / memory_after   一次记忆读写前后的内容
 schedules     当前预约单快照
 这些都是 D5 落盘的轨迹字段，不进 task、不进 scenario
+### A.18 required_calls（最新提出，待审）
+
+```json
+{"tool": "memory", "op": "read"}                    // 必须成功读过记忆
+{"tool": "inspect_device", "device_id": "device_bedroom_climate"}  // 必须查过某台设备
+```
+
+```text
+是什么    要求轨迹里"必须发生过某类工具调用"的行为检查，
+          是老管线 required_observations（T4 必须先查设备）的推广
+用在 TC7A  必须读过预置记忆（否则"符合记忆约束"可能只是碰巧）
+用在 TC7C  第 2 轮必须读过第 1 轮写的记忆（否则测不到跨轮使用）
+不用在 TC7B  memory_expected 已能直接验证写入内容
+判定      出现至少一次成功调用 → 该检查通过；没出现 → 即使终态达标，
+          也只给结果分、不给"行为分"
+谁写谁读  D 出题写；C / D6 判定读；模型看不到
+状态      待审：确认采用后，替换 A.13 action_steps 的作用
 ```
 
 ## 附录 B 老字段速查（不是新增，读例子时会用到）
@@ -463,4 +516,36 @@ keep                  不该动的设备（保持原样）
 required_observations 必须先查过的设备（T4 用）
 expected_finish       finish 契约：completed / refused + 允许的 reason_code
 probe                 T4 专用的"必须被拒绝的尝试"，不进蓝图
+```
+
+## 附录 C 机制与流程变更总表（不是字段，但都是新加的，待你过一遍）
+
+```text
+编号   变更                          说明                                      状态
+C.1    时间冻结（静止时间）            now 全会话不变，不做推进、不做 tick        已写入 02/03
+C.2    影子执行 + 结算                copy 状态应用 steps，与期望比对            已写入 02/03
+C.3    掉线不处理                     due_state 不再构造掉线，不记环境故障       已写入 02/03/04
+C.4    会话模式（TC7C）               reset 一次，轮与轮之间不重置               已写入 01/02/03
+C.5    时间抽样                       base_time 从时间池抽（时段/工作日周末）     已写入 03
+C.6    记忆按场景生成                 依据本轮 s0 与画像生成 memory_initial，     已写入 03
+                                      不做记忆池抽样
+C.7    TC6/TC7 全工具下发             模型看到全部 8 个工具                      已写入 03
+C.8    轮数上限 10 → 12               全部新任务按 12 轮                         已写入 01~03
+                                      （代码与 A_policy 的 10 还未改）
+C.9    新增空气净化器                 只有 turn_on / turn_off，无档位            已写入 01/03
+                                      （设备目录与 schema 还未加）
+C.10   required_calls                 替代 action_steps 的行为检查               待审
+```
+
+## 附录 D 已发生的改名映射（供你核对）
+
+```text
+旧名                     新名                 状态
+at_expr                  time_mention         已改（01~04）
+at_expected              at_time_expected     已改（01~04）
+steps（任务侧）           due_steps            已改（01~04）
+memory_seed              memory_initial       已改
+memory_write_expected    memory_expected      已改（03 里统一）
+action_steps             待定（建议删除）       待审
+接口 time_control.steps  不变                 保留原接口字段名
 ```
