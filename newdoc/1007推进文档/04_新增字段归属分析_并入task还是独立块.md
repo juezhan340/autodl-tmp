@@ -8,11 +8,12 @@
 
 ```text
 2026-10-10 决定：采用方案 3（写入时分层）。
+2026-10-11 决定：required_effects 删除，正面约束统一写 base_task.conditions。
 下面保留五方案对比，方案 4 的写法留作备选参考。
 
 方案 3 的落位（写入时就分好）：
   task            判定真值（at_time_expected、due_steps、memory_expected、
-                  forbidden_actions、required_effects、required_calls、turns 真值）
+                  forbidden_actions、required_calls、turns 真值）
   world           世界初值（base_time、memory_initial、session_turns、
                   due_state、horizon_minutes）
   gen（蓝图）      生成元数据（kind、tc_schema、time_mention、offset_minutes）
@@ -26,7 +27,7 @@
 ```text
 类别            例子                                                  谁用
 判定真值        at_time_expected、due_steps、memory_expected、        C / D6 判定
-                forbidden_actions、required_effects、required_calls、
+                forbidden_actions、required_calls、
                 turns[] 里的逐轮真值
 世界初值        base_time、memory_initial、session_turns、            B reset / C 结算
                 due_state、horizon_minutes（常量）
@@ -55,7 +56,7 @@ task: {
   老 5 个字段,
   time_type, time_mention, offset_minutes, at_time_expected, base_time,
   horizon_minutes, due_steps, due_state, memory_initial, memory_expected,
-  forbidden_actions, required_effects, required_calls, session_turns,
+  forbidden_actions, required_calls, session_turns,
   turns[], kind
 }
 ```
@@ -73,7 +74,7 @@ task: {
 task:  { intent, conditions, keep, required_observations, expected_finish }   ← 原样
 ext:   { kind, time_type, time_mention, offset_minutes, base_time, at_time_expected,
          due_steps, due_state, memory_initial, memory_expected, forbidden_actions,
-         required_effects, required_calls, session_turns, turns[] }
+         required_calls, session_turns, turns[] }
 ```
 
 ```text
@@ -87,7 +88,7 @@ ext:   { kind, time_type, time_mention, offset_minutes, base_time, at_time_expec
 
 ```text
 task:           判定真值（at_time_expected、due_steps、memory_expected、
-                forbidden_actions、required_effects、required_calls、turns 真值）
+                forbidden_actions、required_calls、turns 真值）
 scenario.world: 世界初值（base_time、memory_initial、session_turns、due_state）
 蓝图：          生成元数据（time_type、time_mention、offset_minutes、kind）
 ```
@@ -178,7 +179,6 @@ C/D6 读取         task               task + ext       task             task   
     "memory_initial": "",
     "memory_expected": "",
     "forbidden_actions": [],
-    "required_effects": [],
     "required_calls": [],
     "session_turns": 0,
     "turns": [],
@@ -191,7 +191,7 @@ C/D6 读取         task               task + ext       task             task   
 
 ```text
 task             += at_time_expected / due_steps / memory_expected /
-                    forbidden_actions / required_effects / required_calls /
+                    forbidden_actions / required_calls /
                     turns 的逐轮真值
 scenario.world    = { base_time, memory_initial, session_turns,
                       due_state, horizon_minutes }
@@ -277,7 +277,7 @@ A.8    due_state          到点状态快照（不含掉线）       已写入  
 A.9    memory_initial     开局记忆内容                  已写入    scenario.tc
 A.10   memory_expected    应该写进记忆的内容            已写入    task
 A.11   forbidden_actions  记忆约束下不许做的动作        已写入    task
-A.12   required_effects   记忆驱动必须达成的效果        已写入    task
+A.12   required_effects   已删除（2026-10-11）：正面约束写 base_task.conditions  已删除   —
 A.13   session_turns      会话轮数                      已写入    scenario.tc
 A.14   turns[]            TC7C 逐轮计划                 已写入    task/scenario
 A.15   kind               TC6A…TC7C 类别标签（落盘沿用 category） 已写入  蓝图顶层
@@ -454,9 +454,16 @@ action_steps 已在 2026-10-10 按审阅决定删除；替代方案是 A.17 requ
 谁写谁读  D 出题写；C 判定读
 ```
 
-### A.12 required_effects
+### A.12 required_effects（已删除）
+
+```text
+状态：2026-10-11 决定删除。
+原因：它的写法与 base_task.conditions 同构，属于重复真值；
+      正面约束统一写 base_task.conditions，负面约束用 forbidden_actions。
+```
 
 ```json
+（已废弃的写法）
 记忆："闷了先开空气净化器"
 "required_effects": ["device_bedroom_purifier on=true"]
 ```
@@ -846,7 +853,7 @@ C.26   action_steps 删除               按 2026-10-10 审阅决定删除；   
 ### C.25 forbidden/required 的 schema
 
 ```text
-是什么   forbidden_actions 与 required_effects 目前只有自然语言示例
+是什么   forbidden_actions 目前只有自然语言示例
 例子     ["开窗通风类动作"]、["device_bedroom_purifier on=true"]
 影响     结构未定：是字符串列表还是 ACTION_CALL 过滤条件，需要拍板
 状态     待定
