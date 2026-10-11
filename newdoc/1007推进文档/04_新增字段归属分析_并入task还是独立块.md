@@ -9,13 +9,15 @@
 ```text
 2026-10-10 决定：采用方案 3（写入时分层）。
 2026-10-11 决定：required_effects 删除，正面约束统一写 base_task.conditions。
+2026-10-11 追加调整：base_time 并入 s0（home 顶层键），不再放 scenario.tc / world；
+下文凡写 base_time 归 world / tc 之处，以本条为准（A.5 已同步）。
 下面保留五方案对比，方案 4 的写法留作备选参考。
 
 方案 3 的落位（写入时就分好）：
   task            判定真值（at_time_expected、due_steps、memory_expected、
                   forbidden_actions、required_calls、turns 真值）
-  world           世界初值（base_time、memory_initial、session_turns、
-                  due_state、horizon_minutes）
+  world           世界初值（memory_initial、session_turns、
+                  due_state、horizon_minutes；base_time 随 s0 走）
   gen（蓝图）      生成元数据（kind、tc_schema、time_mention、offset_minutes）
   轨迹（D5 出）     session_id、turn_index、clock、memory 快照、schedules
 
@@ -29,8 +31,8 @@
 判定真值        at_time_expected、due_steps、memory_expected、        C / D6 判定
                 forbidden_actions、required_calls、
                 turns[] 里的逐轮真值
-世界初值        base_time、memory_initial、session_turns、            B reset / C 结算
-                due_state、horizon_minutes（常量）
+世界初值        memory_initial、session_turns、due_state、            B reset / C 结算
+                horizon_minutes（常量）；base_time 随 s0（10-11 调整）
 生成元数据      time_type、time_mention、offset_minutes、             D 审计 / 复现
                 memory 生成理由、kind（标签）
 轨迹产物        session_id、turn_index、clock、memory_before/after、   D5 落盘 / 分析
@@ -42,9 +44,10 @@
   存储视角    数据文件里怎么放（D 写出去、后面读回来）
   运行时视角  D5 跑一局时，B / C / D6 各自从哪个对象里读
 
-同一个字段在两个视角里可以放在不同层。例如 base_time：
-  存储时放在一条记录的 tc 块里；
-  运行时被 D5 展开成 scenario.world.base_time，专门给 B 用。
+同一个字段在两个视角里可以放在不同层。例如 memory_initial：
+  存储时放在 task.memory_task.memory_initial；
+  运行时被 D5 展开成 scenario.world.memory_initial，专门给 B 用。
+（2026-10-11 调整：base_time 不走这条路线，直接并入 s0 / home。）
 ```
 
 ## 2 五种方案（基于完整清单重定）
@@ -89,7 +92,7 @@ ext:   { kind, time_type, time_mention, offset_minutes, base_time, at_time_expec
 ```text
 task:           判定真值（at_time_expected、due_steps、memory_expected、
                 forbidden_actions、required_calls、turns 真值）
-scenario.world: 世界初值（base_time、memory_initial、session_turns、due_state）
+scenario.world: 世界初值（memory_initial、session_turns、due_state；base_time 随 s0，10-11 调整）
 蓝图：          生成元数据（time_type、time_mention、offset_minutes、kind）
 ```
 
@@ -270,7 +273,7 @@ A.1    time_type          绝对/相对时间类型             已写入    tas
 A.2    time_mention       用户话里的时间说法            已写入    蓝图
 A.3    at_time_expected   标准答案时刻                  已写入    task
 A.4    offset_minutes     相对偏移分钟数                已写入    蓝图
-A.5    base_time          冻结的场景起始时间            已写入    scenario.tc
+A.5    base_time          冻结的场景起始时间            已写入    s0/home（10-11 调整）
 A.6    horizon_minutes    7 天窗口上限                  已写入    scenario.tc
 A.7    due_steps          TC6 期望的预约动作序列        已写入    task
 A.8    due_state          到点状态快照（不含掉线）       已写入    scenario.tc
@@ -358,7 +361,7 @@ action_steps 已在 2026-10-10 按审阅决定删除；替代方案是 A.17 requ
 是什么    这一局开始时家里几点；B 在 reset 时解析成 now，整个会话冻结
 例子      inspect_time 第一次返回 09:30，之后每次都返回 09:30
 反例      同一局中途变成 09:31 → 不允许（冻结时间的不变量）
-谁写谁读  D 抽样决定；B reset 读；C 记录读
+谁写谁读  D1 抽样写入 s0（home）；B reset 从 home 读；C 记录读（10-11 调整：并入 s0）
 ```
 
 ### A.6 horizon_minutes

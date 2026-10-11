@@ -8,6 +8,8 @@
 > session_turns、turns[]、kind（落盘沿用老键名 category）、tc_schema。
 > required_effects 已按 2026-10-11 决定删除。
 > 本文只走两类：TC6A（绝对时间一次性预约）与 TC7A（读预置记忆），从提示词到轨迹到数据集完整呈现。
+> 2026-10-11 追加调整：base_time 并入 s0（home 顶层键），world 不再带 base_time；
+> 同时补全 2.3 / 3.3 的 D2-2 示例——task 三块（base_task / time_task / memory_task）都要进提示词。
 
 ## 0 一屏
 
@@ -52,7 +54,7 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
 
 ```text
 抽样   户型（D0_homes）、设备（D0_devices）、画像（D0_personas）
-抽样   时间 base_time：从时间池抽（早上/下午/晚上/深夜、工作日/周末）
+抽样   时间 base_time：D1 从时间池抽（早上/下午/晚上/深夜、工作日/周末）并写入 s0（home）
 生成   记忆 memory_initial（仅 TC7A）：由 D2 依据本轮 s0 与画像生成，不抽样拼装
 约束   同一任务只冻结一个 base_time；记忆必须与 s0 吻合
 ```
@@ -67,7 +69,8 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
 
 方案 3 在新版里这么放：
   task 拆成 base_task / time_task / memory_task 三块（intent 与 expected_finish 必填）
-  world 放运行初值（base_time / horizon_minutes / session_turns / due_state）
+  base_time 并入 s0：作为 home 顶层键随 home 一起走（2026-10-11 调整）
+  world 放运行初值（horizon_minutes / session_turns / due_state；不含 base_time）
   tc_schema 放蓝图顶层；time_mention 归 time_task；不再单设 gen 块
 ```
 
@@ -77,6 +80,7 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
   "category": "TC6A",
   "tc_schema": "v1",
   "home": {
+    "base_time": "2026-10-10 09:30",
     "rooms": [
       {"room_id": "room_living", "display_name": "客厅",
        "device_ids": ["device_living_light"]},
@@ -111,7 +115,6 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
   },
   "user_request": "今晚10点帮我把客厅灯关掉吧。",
   "world": {
-    "base_time": "2026-10-10 09:30",
     "horizon_minutes": 10080,
     "session_turns": 0,
     "due_state": null
@@ -128,7 +131,7 @@ D5 组装运行时 scenario（对齐现有 blueprint_to_scenario）：
   task             ← blueprint.task（含新增判定真值）
   episode_config   ← {max_turns: 12, max_tool_calls_per_turn: 1}
                      （老代码写死 10，要改）
-  world            ← blueprint.world（B reset 只读这块）
+  world            ← blueprint.world（B reset 只读这块；base_time 已在 home 里，不走这里）
   memory_initial   蓝图里在 task.memory_task.memory_initial；
                    D5 组装时移动到 scenario.world.memory_initial
                    （B 只读 world；scenario.task 里不再保留该键）
@@ -245,8 +248,8 @@ base_time：{{base_time}}
 ```
 
 ```text
-base_time / horizon_minutes 不由出题模型产出，来自 D1 的时间抽样；
-D4 组装蓝图时把它们写进 world，task 三块原样保留。
+base_time 不由出题模型产出：D1 抽样后写入 s0（home）；horizon_minutes 由 D4 组装蓝图时写进 world；
+task 三块原样保留。（2026-10-11 调整：base_time 并入 s0）
 ```
 
 ### 2.3 D0 模板：D0_request_TC6A.md（写用户话提示词全文）
@@ -254,9 +257,12 @@ D4 组装蓝图时把它们写进 world，task 三块原样保留。
 ```text
 功能
 把 TC6A 的 task 写成一句自然的用户请求。
-请求里必须包含 time_mention 这个时间说法，但不能出现标准时刻、device_id、动作名、工具名。
+task 三块都是输入：base_task 提供"要做什么"，time_task 提供"什么时候做"；
+请求里必须同时说清这两件事，但不能出现标准时刻、device_id、动作名、工具名。
 
 规则
+  请求必须同时覆盖"做什么"（base_task 的目标动作，对应 due_steps）
+  与"什么时候做"（time_mention）；只读 time_task 会漏掉动作，三块 task 都要看
   时间说法用口语："今晚10点""明早7点""18点半"
   禁止出现 "YYYY-MM-DD HH:MM" 形式的标准时刻
   禁止出现 device_id / room_id / 动作名 / 参数名 / 工具名
@@ -271,9 +277,15 @@ D4 组装蓝图时把它们写进 world，task 三块原样保留。
 
 完整例子
 intent：今晚睡前把客厅灯关掉
-task：{"time_task":{"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
+task：{"base_task":{"intent":"今晚睡前把客厅灯关掉",
+                    "conditions":[{"device_id":"device_living_light","field":"on",
+                                   "operator":"eq","value":false}],
+                    "keep":[],"required_observations":[],
+                    "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
+       "time_task":{"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
                     "due_steps":[{"device_id":"device_living_light",
-                                  "action":"turn_off","params":{}}]}, ...}
+                                  "action":"turn_off","params":{}}]},
+       "memory_task":{}}
 可用显示名：客厅主灯、卧室空调、卧室空气净化器、卧室加湿器
 正确输出：今晚10点帮我把客厅灯关掉吧。
 
@@ -451,7 +463,7 @@ D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
       "memory_task": {}
     },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
-    "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080,
+    "world": {"horizon_minutes": 10080,
               "session_turns": 0, "due_state": null}
   },
   "record": {"...": "见 2.8 的 record"},
@@ -549,8 +561,8 @@ base_time：{{base_time}}
 ```
 
 ```text
-base_time / horizon_minutes 来自 D1 的时间抽样，不由出题模型产出；
-D4 组装蓝图时把它们写进 world。
+base_time 由 D1 抽样写入 s0（home），horizon_minutes 由 D4 写进 world；
+两者都不由出题模型产出（2026-10-11 调整：base_time 并入 s0）。
 memory_initial 留在 task.memory_task（这是蓝图里的源）；
 D5 组装 scenario 时移动到 scenario.world.memory_initial 供 B reset。
 ```
@@ -578,8 +590,15 @@ D5 组装 scenario 时移动到 scenario.world.memory_initial 供 B reset。
 
 完整例子
 intent：卧室闷，按记忆优先开净化器而不是开窗
-task：{"memory_task":{"memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器",
-                       ...}, ...}
+task：{"base_task":{"intent":"卧室闷，按记忆优先开净化器而不是开窗",
+                    "conditions":[{"device_id":"device_bedroom_purifier","field":"on",
+                                   "operator":"eq","value":true}],
+                    "keep":[],"required_observations":[],
+                    "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
+       "time_task":{},
+       "memory_task":{"memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器",
+                      "memory_expected":"","forbidden_actions":["开窗通风类动作"],
+                      "required_calls":[]}}
 可用显示名：卧室空调、卧室空气净化器、卧室加湿器
 正确输出：卧室有点闷，帮我想想办法。
 
@@ -765,7 +784,7 @@ record 里新增可选块（仅 TC 任务）：
                       "required_calls": [], "turns": []}
     },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
-    "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080,
+    "world": {"horizon_minutes": 10080,
               "memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
               "session_turns": 0, "due_state": null}
   },
@@ -823,4 +842,6 @@ record 里新增可选块（仅 TC 任务）：
    "影子结算结果满足 conditions"，请在 evaluator 里单独分支
 10 memory_initial 的搬运口径：蓝图在 task.memory_task、运行时在 world；
    确认按"D5 移动、scenario.task 不再保留"处理
+11 base_time 并入 s0（2026-10-11 调整，已定）：home 顶层新增 base_time 键，
+   world 不再带 base_time；D1 写入、B reset 从 home 读取，由 B_clock 解析
 ```

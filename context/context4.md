@@ -205,7 +205,7 @@ task 分三块（老任务只有 base_task；time/memory 块可为 {}）
   memory_task  memory_initial / memory_expected / forbidden_actions / required_calls / turns
 
 蓝图（沿用现有键）blueprint_id / category / home(s0) / task / user_request
-  + world（base_time / horizon_minutes / session_turns / due_state）+ 顶层 tc_schema
+  + world（horizon_minutes / session_turns / due_state；base_time 自 10-11 起并入 s0）+ 顶层 tc_schema
   存储用方案 3（写入时分层）；memory_initial 蓝图在 task.memory_task，
   D5 组装 scenario 时搬运到 scenario.world.memory_initial 供 B reset
 

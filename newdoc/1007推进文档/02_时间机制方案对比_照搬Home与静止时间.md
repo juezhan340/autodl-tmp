@@ -256,7 +256,7 @@ reset 前后对照：
 
 以后 reset(scenario)
   devices   ← scenario.home 的副本
-  now       ← scenario.tc.base_time（整个会话不变）
+  now       ← scenario.home.base_time（整个会话不变；10-11 调整：并入 s0）
   memory    ← scenario.tc.memory_initial
   schedules ← []
 ```
@@ -265,7 +265,7 @@ reset 前后对照：
 
 ```text
 reset 签名不变，还是 reset(scenario)；变的是 scenario 多了可选字段块 scenario.tc，
-B 从这块里读 base_time / memory_initial / 会话配置，B_schema 同步扩展。
+B 从这块里读 memory_initial / 会话配置（base_time 10-11 起从 home 读），B_schema 同步扩展。
 reset 次数由 C 决定：单轮任务一次；多轮任务一个会话一次，轮与轮之间不 reset。
 会话结束 B 的运行时状态直接丢弃，不落盘；持久化的只有 D 的任务文件与 D5 的轨迹。
 inspect_time / time_control / memory 都是 B 的工具路由，与 execute_action 平级；
@@ -322,7 +322,7 @@ D 数据管线
 格式        YYYY-MM-DD HH:MM，家庭时区，不带时区后缀
 精度        分钟；秒不进模型视野，±30 秒只是环境侧验收窗口
 绝对性      指向日历上唯一时刻，可比较、可加减、可算两时刻差
-冻结        scenario.base_time 由数据管线选定，整个 episode 不变
+冻结        base_time 由数据管线选定并并入 s0（home），整个 episode 不变（10-11 调整）
 星期        不存储；字符串里只有日期与时分，需要时由日期派生显示
 内部存储    整数分钟（now 与 at 都存分钟），展示或交互时格式化成字符串
 调度窗口    7 天 = 10080 分钟：at 必须晚于 now，且不超过 now + 10080
@@ -332,7 +332,7 @@ D 数据管线
 字段落地：
 
 ```text
-B base_time        string   "2026-10-09 09:30"  scenario 自带，episode 内不变
+B base_time        string   "2026-10-09 09:30"  随 s0（home）自带，episode 内不变（10-11 调整）
 B now              int      由 base_time 换算的分钟；inspect_time 返回格式化串 + clock
 B schedules[].at   int      写单时由模型给的字符串解析；内部比较用分钟
 time_control.at    string   "2026-10-09 22:00"  模型输出格式；
