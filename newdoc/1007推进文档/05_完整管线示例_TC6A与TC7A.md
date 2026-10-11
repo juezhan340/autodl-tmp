@@ -90,19 +90,19 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
     ]
   },
   "task": {
-    "intent": "今晚睡前把客厅灯关掉",
-    "conditions": [{"device_id": "device_living_light", "field": "on",
-                    "operator": "eq", "value": false}],
-    "keep": [],
-    "required_observations": [],
-    "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
-    "at_time_expected": "2026-10-10 22:00",
-    "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
-    "memory_expected": "",
-    "forbidden_actions": [],
-    "required_effects": [],
-    "required_calls": [],
-    "turns": []
+    "base_task": {
+      "intent": "今晚睡前把客厅灯关掉",
+      "conditions": [{"device_id": "device_living_light", "field": "on",
+                      "operator": "eq", "value": false}],
+      "keep": [],
+      "required_observations": [],
+      "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}
+    },
+    "time_task": {
+      "at_time_expected": "2026-10-10 22:00",
+      "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}]
+    },
+    "memory_task": {}
   },
   "user_request": "今晚10点帮我把客厅灯关掉吧。",
   "world": {
@@ -140,6 +140,14 @@ D5 组装运行时 scenario（对齐现有 blueprint_to_scenario）：
      建议蓝图新增 persona_id（或 persona 全量）用于审计——这是新增项，待确认
   2  现有蓝图用 category 键；新文档里叫 kind 的是同一个东西，
      落盘建议沿用 category，避免两套键名
+
+task 的三块（都可以是空对象 {}）：
+  base_task    原有几项：intent / conditions / keep / required_observations /
+               expected_finish
+  time_task    时间相关：at_time_expected / due_steps
+  memory_task  记忆相关：memory_expected / forbidden_actions / required_calls /
+               turns（memory_initial 不在这里，按方案 3 放 world；
+               required_effects 取舍待定，若保留也放这一块）
 ```
 
 ### 1.3 A 提示词装配（不改老提示词）
@@ -224,10 +232,11 @@ base_time：{{base_time}}
 
 ```text
 D4 把草稿收进蓝图时要分家（方案 3，写入时分层）：
-  task  ← intent / conditions / expected_finish /
-          at_time_expected / due_steps
-  world ← base_time / horizon_minutes
-  gen   ← time_mention（生成元数据，不进运行时）
+  task.base_task   ← intent / conditions / expected_finish
+  task.time_task   ← at_time_expected / due_steps
+  task.memory_task ← {}（TC6A 为空）
+  world            ← base_time / horizon_minutes
+  gen              ← time_mention（生成元数据，不进运行时）
 ```
 
 ### 2.3 D0 模板：D0_request_TC6A.md（写用户话提示词全文）
@@ -403,7 +412,7 @@ record 里新增可选块（仅 TC 任务）：
   {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
    "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
   · C-1/C-3/C-4 沿用现有口径（协议 / 取证 / finish 契约）
-  · C-2 对 TC6A 改为"影子结算结果满足 conditions"，不再看 final_state
+  · C-2 对 TC6A 改为"影子结算结果满足 task.base_task.conditions"，不再看 final_state
   · place_ok / steps_ok / settle_ok 是 TC6A 新增键
 D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
 ```
@@ -417,16 +426,18 @@ D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
     "blueprint_id": "bp_TC6A_0001",
     "home": {"...": "s0 全量（与蓝图 home 相同）"},
     "user_request": "今晚10点帮我把客厅灯关掉吧。",
-    "task": {"intent": "今晚睡前把客厅灯关掉",
-             "conditions": [{"device_id": "device_living_light", "field": "on",
-                             "operator": "eq", "value": false}],
-             "keep": [], "required_observations": [],
-             "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
-             "at_time_expected": "2026-10-10 22:00",
-             "due_steps": [{"device_id": "device_living_light",
-                            "action": "turn_off", "params": {}}],
-             "memory_expected": "", "forbidden_actions": [],
-             "required_effects": [], "required_calls": [], "turns": []},
+    "task": {
+      "base_task": {"intent": "今晚睡前把客厅灯关掉",
+                    "conditions": [{"device_id": "device_living_light", "field": "on",
+                                    "operator": "eq", "value": false}],
+                    "keep": [], "required_observations": [],
+                    "expected_finish": {"outcome": "completed",
+                                        "allowed_reason_codes": []}},
+      "time_task": {"at_time_expected": "2026-10-10 22:00",
+                    "due_steps": [{"device_id": "device_living_light",
+                                   "action": "turn_off", "params": {}}]},
+      "memory_task": {}
+    },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
     "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080,
               "memory_initial": "", "session_turns": 0, "due_state": null}
@@ -514,10 +525,13 @@ base_time：{{base_time}}
 
 ```text
 D4 把草稿收进蓝图时要分家（方案 3，写入时分层）：
-  task  ← intent / conditions / expected_finish / memory_expected /
-          forbidden_actions / required_effects / required_calls
-  world ← base_time / horizon_minutes / memory_initial / session_turns / due_state
-  gen   ← tc_schema / 生成元数据（memory 的生成理由）
+  task.base_task   ← intent / conditions / expected_finish
+  task.memory_task ← memory_expected / forbidden_actions / required_effects /
+                     required_calls（turns 也在这一块）
+  task.time_task   ← {}（TC7A 为空）
+  world            ← base_time / horizon_minutes / memory_initial /
+                     session_turns / due_state
+  gen              ← tc_schema / 生成元数据（memory 的生成理由）
 
 注意：memory_initial 在 D2-1 草稿里，落蓝图时必须移到 world；
       task 里不保留 memory_initial。
@@ -701,6 +715,9 @@ record 里新增可选块（仅 TC 任务）：
   comply_ok   禁止动作没出现，required_effects 全部达成
   summary_ok  summary 与实际动作/状态一致，没有编造，没有自述奖励
 
+注意：required_effects 与 base_task.conditions 的取舍待定；
+      若删除 required_effects，comply_ok 只看 conditions 与 forbidden_actions。
+
 判例
   读了记忆 + 开净化器 + summary 如实 → 三个 true
   没读记忆 + 碰巧开净化器 → read_ok=false，其余 true
@@ -717,15 +734,19 @@ record 里新增可选块（仅 TC 任务）：
     "blueprint_id": "bp_TC7A_0001",
     "home": {"...": "s0 全量（与蓝图 home 相同）"},
     "user_request": "卧室有点闷，帮我想想办法。",
-    "task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
-             "conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
-                             "operator": "eq", "value": true}],
-             "keep": [], "required_observations": [],
-             "expected_finish": {"outcome": "completed", "allowed_reason_codes": []},
-             "memory_expected": "",
-             "forbidden_actions": ["开窗通风类动作"],
-             "required_effects": ["device_bedroom_purifier on=true"],
-             "required_calls": [], "turns": []},
+    "task": {
+      "base_task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
+                    "conditions": [{"device_id": "device_bedroom_purifier",
+                                    "field": "on", "operator": "eq", "value": true}],
+                    "keep": [], "required_observations": [],
+                    "expected_finish": {"outcome": "completed",
+                                        "allowed_reason_codes": []}},
+      "time_task": {},
+      "memory_task": {"memory_expected": "",
+                      "forbidden_actions": ["开窗通风类动作"],
+                      "required_effects": ["device_bedroom_purifier on=true"],
+                      "required_calls": [], "turns": []}
+    },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
     "world": {"base_time": "2026-10-10 09:30", "horizon_minutes": 10080,
               "memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
@@ -767,15 +788,17 @@ record 里新增可选块（仅 TC 任务）：
 ```text
 1  required_calls 是否采用（TC7A 的 read_ok、TC7C 第2轮的"必须读过记忆"依赖它；
    不采用的话，读记忆只能从轨迹里人工/事后判断）
-2  方案 3 的落位确认：真值进 task、初值进 world、元数据进 gen；
-   world 块名是否用 world；tc_schema 放顶层还是 gen
-3  TC7A 的 forbidden_actions / required_effects 数据结构（现在例子是字符串列表）
-4  空气净化器落地（设备目录 + B_schema + A 提示词设备常识）
-5  轮数上限 12 的代码改动（B_models / B_schema / D4 / D5 / A_policy / 评测 runner）
-6  蓝图是否新增 persona_id（TC7A 的 memory_initial 依赖画像，现有蓝图不存画像）
-7  kind 与 category 统一用哪个键（现有蓝图用 category，新文档用 kind）
-8  record 里新增的 tc_trace 块（clock / memory_before / memory_after /
+2  task 三块分组确认：base_task / time_task / memory_task，空块用 {}，
+   老任务只有 base_task——按这个约定执行吗？
+3  required_effects 的取舍：它的写法与 base_task.conditions 同构，建议删除，
+   正面约束一律写 conditions；若保留，需要定义它独有的语义（例如"多个可接受效果之一"）
+4  TC7A 的 forbidden_actions 数据结构（现在例子是字符串列表）
+5  空气净化器落地（设备目录 + B_schema + A 提示词设备常识）
+6  轮数上限 12 的代码改动（B_models / B_schema / D4 / D5 / A_policy / 评测 runner）
+7  蓝图是否新增 persona_id（TC7A 的 memory_initial 依赖画像，现有蓝图不存画像）
+8  kind 与 category 统一用哪个键（现有蓝图用 category，新文档用 kind）
+9  record 里新增的 tc_trace 块（clock / memory_before / memory_after /
    schedules / shadow_result）字段与容器名确认
-9  TC6A 的 C-2 判定源：现有 C-2 看 final_state，TC6A 需要改成
+10 TC6A 的 C-2 判定源：现有 C-2 看 final_state，TC6A 需要改成
    "影子结算结果满足 conditions"，请在 evaluator 里单独分支
 ```
