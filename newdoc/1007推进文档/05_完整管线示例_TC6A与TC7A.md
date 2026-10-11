@@ -3,13 +3,22 @@
 > 依据：`04_新增字段归属分析` 的字段清单；按**方案 3（写入时分层）**呈现：
 > 判定真值进 task（base_task / time_task / memory_task 三块）、
 > 世界初值进 world；time_mention 归 time_task，tc_schema 放蓝图顶层。
-> 名词按 2026-10-10 定稿：time_mention、at_time_expected、offset_minutes、due_steps、due_state、
+> 名词按 2026-10-10 定稿：time_mention、at_time_expected、offset_minutes、due_steps、due_conditions、
 > memory_initial、memory_expected、forbidden_actions、required_calls（待审）、
 > session_turns、turns[]、kind（落盘沿用老键名 category）、tc_schema。
 > required_effects 已按 2026-10-11 决定删除。
 > 本文只走两类：TC6A（绝对时间一次性预约）与 TC7A（读预置记忆），从提示词到轨迹到数据集完整呈现。
 > 2026-10-11 追加调整：base_time 并入 s0（home 顶层键），world 不再带 base_time；
 > 同时补全 2.3 / 3.3 的 D2-2 示例——task 三块（base_task / time_task / memory_task）都要进提示词。
+> 2026-10-11 决议（TC 判定口径）：
+>   1  base_task.conditions 更名 instant_conditions（即时条件；TC6 固定为空数组）；
+>      time_task 新增 due_conditions（到点条件，影子结算的判定对象）
+>   2  due_state 删除：不再有"到点状态快照"，到点判定直接看 due_conditions
+>   3  影子起点：D4 用出题时的 s0；结算用"新的 s0"= episode 结束时的世界
+>      （当前时刻执行完的结果；静止时间下就是到点时的世界）
+>   4  结算对模型实际提交的 steps 跑影子，结果对即过（steps_ok 只记一致性）；
+>      due_conditions 的 eq 比 value、ge/le 与 T1~T5 同口径（比 s0 初值严格变向）
+>   5  C-2 对 TC6 = settle_ok（影子结算），不再看 final_state
 
 ## 0 一屏
 
@@ -70,7 +79,7 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
 方案 3 在新版里这么放：
   task 拆成 base_task / time_task / memory_task 三块（intent 与 expected_finish 必填）
   base_time 并入 s0：作为 home 顶层键随 home 一起走（2026-10-11 调整）
-  world 放运行初值（horizon_minutes / session_turns / due_state；不含 base_time）
+  world 放运行初值（horizon_minutes / session_turns；不含 base_time；due_state 已删）
   tc_schema 放蓝图顶层；time_mention 归 time_task；不再单设 gen 块
 ```
 
@@ -100,8 +109,7 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
   "task": {
     "base_task": {
       "intent": "今晚睡前把客厅灯关掉",
-      "conditions": [{"device_id": "device_living_light", "field": "on",
-                      "operator": "eq", "value": false}],
+      "instant_conditions": [],
       "keep": [],
       "required_observations": [],
       "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}
@@ -109,15 +117,16 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
     "time_task": {
       "time_mention": "今晚10点",
       "at_time_expected": "2026-10-10 22:00",
-      "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}]
+      "due_steps": [{"device_id": "device_living_light", "action": "turn_off", "params": {}}],
+      "due_conditions": [{"device_id": "device_living_light", "field": "on",
+                          "operator": "eq", "value": false}]
     },
     "memory_task": {}
   },
   "user_request": "今晚10点帮我把客厅灯关掉吧。",
   "world": {
     "horizon_minutes": 10080,
-    "session_turns": 0,
-    "due_state": null
+    "session_turns": 0
   }
 }
 ```
@@ -147,13 +156,18 @@ D5 组装运行时 scenario（对齐现有 blueprint_to_scenario）：
      落盘建议沿用 category，避免两套键名
 
 task 的三块：
-  base_task    必有；原有几项：intent / conditions / keep / required_observations /
+  base_task    必有；字段：intent / instant_conditions / keep / required_observations /
                expected_finish；intent 与 expected_finish 不能为空
-  time_task    时间相关：time_mention / at_time_expected / due_steps
+               （conditions 更名为 instant_conditions："写单这一刻"的目标；
+                TC6 固定为空数组——现在不做任何事）
+  time_task    时间相关：time_mention / at_time_expected / due_steps / due_conditions
                （TC6B 还有 offset_minutes）；非时间任务为 {}
+               （due_conditions = "到点执行后"的目标，影子结算判它；
+                eq 比 value，ge/le 比 s0 初值严格变向，与 T1~T5 同口径）
   memory_task  记忆相关：memory_initial / memory_expected / forbidden_actions /
                required_calls / turns；非记忆任务为 {}
-  required_effects 已删除，正面约束一律写 base_task.conditions
+  required_effects 已删除，正面约束一律写对应块的 conditions
+  （注：老管线 T1~T5 的 task.conditions 键不动；instant_conditions 只出现在 TC 三块结构里）
 ```
 
 ### 1.3 A 提示词装配（不改老提示词）
@@ -162,8 +176,8 @@ task 的三块：
 TC 的 A 提示词 = 老 A_policy.md + TC 附加段
   工具表：全部 8 个（observe_home / inspect_room / inspect_device / execute_action /
           finish / inspect_time / time_control / memory）
-  TC6A 附加段：时间调度规则（见 2.7）
-  TC7A 附加段：记忆规则（见 3.7）
+  TC6A 附加段：时间调度规则（见 2.8）
+  TC7A 附加段：记忆规则（见 3.8）
 ```
 
 ## 2 TC6A 完整管线
@@ -182,13 +196,14 @@ TC6A 是什么
 
 输出字段（task 三块；intent 与 expected_finish 必填、不能为空）
 {"base_task": {"intent":"一句话目标",
-               "conditions":[{"device_id":"...","field":"...",
-                              "operator":"eq","value":...}],
+               "instant_conditions":[],
                "keep":[], "required_observations":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {"time_mention":"用户话里的时间说法",
                "at_time_expected":"YYYY-MM-DD HH:MM",
-               "due_steps":[{"device_id":"...","action":"...","params":{}}]},
+               "due_steps":[{"device_id":"...","action":"...","params":{}}],
+               "due_conditions":[{"device_id":"...","field":"...",
+                                  "operator":"eq","value":...}]},
  "memory_task": {}}
 
 硬规则
@@ -196,7 +211,8 @@ TC6A 是什么
   due_steps 1~3 条，设备与动作只能来自本轮 s0
   time_mention 不能是"每晚/每天"这类持久规则；出现直接判废
   time_mention 不能直接写标准时刻（那是答案，不是题面说法）
-  base_task.conditions 描述"到点执行后终态应满足什么"
+  instant_conditions 描述"写单这一刻"要满足的状态；TC6A 固定写空数组
+  due_conditions 描述"到点执行后终态应满足什么"（影子结算的判定对象）
   时间相关字段全部放 time_task；memory_task 固定为 {}（TC6A 不用记忆）
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC6A）
 
@@ -215,13 +231,14 @@ TC6A 是什么
 本轮 base_time："2026-10-10 09:30"
 正确输出：
 {"base_task": {"intent":"今晚睡前把客厅灯关掉",
-               "conditions":[{"device_id":"device_living_light","field":"on",
-                              "operator":"eq","value":false}],
+               "instant_conditions":[],
                "keep":[], "required_observations":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
                "due_steps":[{"device_id":"device_living_light",
-                             "action":"turn_off","params":{}}]},
+                             "action":"turn_off","params":{}}],
+               "due_conditions":[{"device_id":"device_living_light","field":"on",
+                                  "operator":"eq","value":false}]},
  "memory_task": {}}
 
 不要照抄例子里的设备与数值；本轮按 {{s0}} 另写。
@@ -236,20 +253,22 @@ base_time：{{base_time}}
 
 ```json
 {"base_task": {"intent": "今晚睡前把客厅灯关掉",
-               "conditions": [{"device_id": "device_living_light", "field": "on",
-                               "operator": "eq", "value": false}],
+               "instant_conditions": [],
                "keep": [], "required_observations": [],
                "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}},
  "time_task": {"time_mention": "今晚10点",
                "at_time_expected": "2026-10-10 22:00",
                "due_steps": [{"device_id": "device_living_light",
-                              "action": "turn_off", "params": {}}]},
+                              "action": "turn_off", "params": {}}],
+               "due_conditions": [{"device_id": "device_living_light", "field": "on",
+                                   "operator": "eq", "value": false}]},
  "memory_task": {}}
 ```
 
 ```text
 base_time 不由出题模型产出：D1 抽样后写入 s0（home）；horizon_minutes 由 D4 组装蓝图时写进 world；
 task 三块原样保留。（2026-10-11 调整：base_time 并入 s0）
+due_steps / due_conditions 由出题模型一起写；D4 负责验（见 2.7）。
 ```
 
 ### 2.3 D0 模板：D0_request_TC6A.md（写用户话提示词全文）
@@ -257,12 +276,12 @@ task 三块原样保留。（2026-10-11 调整：base_time 并入 s0）
 ```text
 功能
 把 TC6A 的 task 写成一句自然的用户请求。
-task 三块都是输入：base_task 提供"要做什么"，time_task 提供"什么时候做"；
+task 三块都是输入：动作看 time_task 的 due_steps，时间看 time_mention；
 请求里必须同时说清这两件事，但不能出现标准时刻、device_id、动作名、工具名。
 
 规则
-  请求必须同时覆盖"做什么"（base_task 的目标动作，对应 due_steps）
-  与"什么时候做"（time_mention）；只读 time_task 会漏掉动作，三块 task 都要看
+  请求必须同时覆盖"做什么"（time_task.due_steps 的动作）与"什么时候做"（time_mention）
+  两个块都要读；漏掉任何一边都是 TARGET_NOT_COVERED
   时间说法用口语："今晚10点""明早7点""18点半"
   禁止出现 "YYYY-MM-DD HH:MM" 形式的标准时刻
   禁止出现 device_id / room_id / 动作名 / 参数名 / 工具名
@@ -278,13 +297,14 @@ task 三块都是输入：base_task 提供"要做什么"，time_task 提供"什�
 完整例子
 intent：今晚睡前把客厅灯关掉
 task：{"base_task":{"intent":"今晚睡前把客厅灯关掉",
-                    "conditions":[{"device_id":"device_living_light","field":"on",
-                                   "operator":"eq","value":false}],
+                    "instant_conditions":[],
                     "keep":[],"required_observations":[],
                     "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
        "time_task":{"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
                     "due_steps":[{"device_id":"device_living_light",
-                                  "action":"turn_off","params":{}}]},
+                                  "action":"turn_off","params":{}}],
+                    "due_conditions":[{"device_id":"device_living_light","field":"on",
+                                       "operator":"eq","value":false}]},
        "memory_task":{}}
 可用显示名：客厅主灯、卧室空调、卧室空气净化器、卧室加湿器
 正确输出：今晚10点帮我把客厅灯关掉吧。
@@ -347,14 +367,16 @@ user_request：{{user_request}}
 ```text
 输入      task + s0 + base_time
 步骤
-  1  静态检查：due_steps 里的 device_id / action / params 在 s0 中合法
+  1  静态检查：due_steps 里的 device_id / action / params 在 s0 中合法；
+     due_conditions 引用的设备与字段在 s0 中存在
   2  时间检查：at_time_expected 晚于 base_time 且 ≤ base_time + 10080 分钟
-  3  影子执行：copy s0 → 应用 due_steps → 得到"到点后的状态"
-  4  结果比对：影子状态满足 conditions
+  3  影子执行：copy s0（出题时的世界）→ 应用 due_steps → 得到"如果到点执行后的状态"
+  4  结果比对：影子状态满足 due_conditions（TC6 的判定真值；instant_conditions
+     固定为空，不参与）
 输出
   {"oracle_ok": true,
    "shadow_state_diff": {"device_living_light": {"on": {"from": true, "to": false}}},
-   "reason": "at 合法、steps 合法、影子执行满足 conditions"}
+   "reason": "at 合法、steps 合法、影子执行满足 due_conditions"}
 ```
 
 ### 2.8 D5 跑轨迹（A 提示词 + 轨迹）
@@ -419,24 +441,30 @@ record 里新增可选块（仅 TC 任务）：
 
 注意：final_state 里客厅灯仍是 on=true——静止时间下预约不真正执行；
 "到点会不会变成 false"由结算阶段的影子执行判定（见 2.9）。
+结算影子的起点 = 新的 s0，即本 episode 结束时的世界（当前时刻执行完的结果；
+静止时间下这就是"到点时的世界"），不是出题时的旧 s0。
 ```
 
 ### 2.9 D6 判定（TC6A 规则判定）
 
 ```text
 ① 下单判定
-   at 与 at_time_expected 分钟级相等          → 通过
-   steps 与 due_steps 一致（设备/动作/参数）    → 通过
-   预约单建立（schedule_id 存在）              → 通过
-② 结算判定
-   影子执行结果满足 conditions                 → 通过
-   （due_state 有值时在快照上跑；掉线不处理）
+   at 与 at_time_expected 分钟级相等          → place_ok
+   steps 与 due_steps 一致（设备/动作/参数）    → steps_ok（只记一致性，不挡结算分）
+   预约单建立（schedule_id 存在）              → 下单成立
+② 结算判定（影子执行）
+   起点 = 新的 s0（episode 结束时的世界 = 当前时刻执行完的结果）
+   步骤 = 模型实际提交的 steps（不换成 due_steps；结果对就可以）
+   比对 = 影子终态满足 due_conditions：
+          eq 比 value；ge/le 与 T1~T5 同口径，比 s0 初值严格变向
+   → settle_ok（掉线本期不处理）
 标签
   {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
    "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
   · C-1/C-3/C-4 沿用现有口径（协议 / 取证 / finish 契约）
-  · C-2 对 TC6A 改为"影子结算结果满足 task.base_task.conditions"，不再看 final_state
-  · place_ok / steps_ok / settle_ok 是 TC6A 新增键
+  · C-2 对 TC6 = settle_ok（影子结算结果），不再看 final_state
+  · place_ok / steps_ok / settle_ok / time_error 是 TC6 新增键；
+    time_error = 该写单却直接 execute_action（终态碰巧满足也算错）
 D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
 ```
 
@@ -451,20 +479,22 @@ D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
     "user_request": "今晚10点帮我把客厅灯关掉吧。",
     "task": {
       "base_task": {"intent": "今晚睡前把客厅灯关掉",
-                    "conditions": [{"device_id": "device_living_light", "field": "on",
-                                    "operator": "eq", "value": false}],
+                    "instant_conditions": [],
                     "keep": [], "required_observations": [],
                     "expected_finish": {"outcome": "completed",
                                         "allowed_reason_codes": []}},
       "time_task": {"time_mention": "今晚10点",
                     "at_time_expected": "2026-10-10 22:00",
                     "due_steps": [{"device_id": "device_living_light",
-                                   "action": "turn_off", "params": {}}]},
+                                   "action": "turn_off", "params": {}}],
+                    "due_conditions": [{"device_id": "device_living_light",
+                                        "field": "on", "operator": "eq",
+                                        "value": false}]},
       "memory_task": {}
     },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
     "world": {"horizon_minutes": 10080,
-              "session_turns": 0, "due_state": null}
+              "session_turns": 0}
   },
   "record": {"...": "见 2.8 的 record"},
   "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
@@ -475,8 +505,10 @@ D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
 }
 ```
 
-D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同，只收录标签全 true 的行
-（沿用现有 D_copy_dataset 口径；TC 新增键也要求为 true）。
+D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同。
+TC6 进集口径（2026-10-11 定，结果导向）：C-1 / C-3 / C-4 全 true，
+C-2（= settle_ok）与 place_ok 为 true，time_error = false；
+steps_ok 仅记录、不单独卡进集（是否更严见 §5 待确认）。
 
 ## 3 TC7A 完整管线
 
@@ -493,8 +525,8 @@ TC7A 是什么
 
 输出字段（task 三块；intent 与 expected_finish 必填、不能为空）
 {"base_task": {"intent":"一句话目标",
-               "conditions":[{"device_id":"...","field":"...",
-                              "operator":"eq","value":...}],
+               "instant_conditions":[{"device_id":"...","field":"...",
+                                      "operator":"eq","value":...}],
                "keep":[], "required_observations":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {},
@@ -509,15 +541,15 @@ TC7A 是什么
   s0 没有空气净化器就不能写"开净化器"
   memory_initial 与用户请求相关，但请求不能直接复述它
   forbidden_actions 1~2 条，必须是 s0 里真实存在设备的动作
-  正面约束（必须达成的效果）写进 base_task.conditions；不再使用 required_effects
+  正面约束（必须达成的效果）写进 base_task.instant_conditions；不再使用 required_effects
   记忆相关字段全部放 memory_task；time_task 固定为 {}（TC7A 不用时间调度）
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC7A）
 
 小例子
 对  memory_initial="用户对花粉过敏，别开窗；闷了先开空气净化器"
     forbidden_actions=["开窗通风类动作"]
-    base_task.conditions=[{"device_id":"device_bedroom_purifier","field":"on",
-                           "operator":"eq","value":true}]
+    base_task.instant_conditions=[{"device_id":"device_bedroom_purifier","field":"on",
+                                   "operator":"eq","value":true}]
 错  memory_initial="把客厅灯关掉"（这是动作指令，不是偏好记忆）
 错  s0 里没有窗户却写"别开窗"
 
@@ -527,8 +559,8 @@ TC7A 是什么
           "device_bedroom_purifier","device_bedroom_humidifier"]}], "devices":[...]}
 正确输出：
 {"base_task": {"intent":"卧室闷，按记忆优先开净化器而不是开窗",
-               "conditions":[{"device_id":"device_bedroom_purifier","field":"on",
-                              "operator":"eq","value":true}],
+               "instant_conditions":[{"device_id":"device_bedroom_purifier","field":"on",
+                                      "operator":"eq","value":true}],
                "keep":[], "required_observations":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {},
@@ -549,8 +581,8 @@ base_time：{{base_time}}
 
 ```json
 {"base_task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
-               "conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
-                               "operator": "eq", "value": true}],
+               "instant_conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
+                                       "operator": "eq", "value": true}],
                "keep": [], "required_observations": [],
                "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}},
  "time_task": {},
@@ -565,6 +597,7 @@ base_time 由 D1 抽样写入 s0（home），horizon_minutes 由 D4 写进 world
 两者都不由出题模型产出（2026-10-11 调整：base_time 并入 s0）。
 memory_initial 留在 task.memory_task（这是蓝图里的源）；
 D5 组装 scenario 时移动到 scenario.world.memory_initial 供 B reset。
+TC7A 没有 due_conditions（time_task 为空）；它的动作在当下真执行，判定看终态。
 ```
 
 ### 3.3 D0 模板：D0_request_TC7A.md（写用户话提示词全文）
@@ -591,8 +624,8 @@ D5 组装 scenario 时移动到 scenario.world.memory_initial 供 B reset。
 完整例子
 intent：卧室闷，按记忆优先开净化器而不是开窗
 task：{"base_task":{"intent":"卧室闷，按记忆优先开净化器而不是开窗",
-                    "conditions":[{"device_id":"device_bedroom_purifier","field":"on",
-                                   "operator":"eq","value":true}],
+                    "instant_conditions":[{"device_id":"device_bedroom_purifier","field":"on",
+                                           "operator":"eq","value":true}],
                     "keep":[],"required_observations":[],
                     "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
        "time_task":{},
@@ -657,12 +690,13 @@ user_request：{{user_request}}
 输入      task + s0
 步骤
   1  一致性：memory_initial 提到的设备/能力必须在 s0 里存在
-  2  可行性：base_task.conditions 对应的动作在 s0 中合法
-  3  影子预演：copy s0 → 打开净化器 → 检查 base_task.conditions 满足
+  2  可行性：base_task.instant_conditions 对应的动作在 s0 中合法
+  3  影子预演：copy s0 → 打开净化器 → 检查 base_task.instant_conditions 满足
+     （只是生成侧可行性预演；TC7A 动作在 episode 里真执行，没有 TC6 那种结算影子）
 输出
   {"oracle_ok": true, "shadow_state_diff":
    {"device_bedroom_purifier": {"on": {"from": false, "to": true}}},
-   "reason": "记忆与 s0 一致；按记忆行动可达成 base_task.conditions"}
+   "reason": "记忆与 s0 一致；按记忆行动可达成 base_task.instant_conditions"}
 ```
 
 ### 3.8 D5 跑轨迹（A 提示词 + 轨迹）
@@ -742,7 +776,7 @@ record 里新增可选块（仅 TC 任务）：
 只看工具调用、记忆快照与状态变化，不采信 summary 自述。
 
 输入
-  task：base_task.conditions / memory_task.memory_initial / forbidden_actions
+  task：base_task.instant_conditions / memory_task.memory_initial / forbidden_actions
   轨迹：turns + 工具调用 + state_diff + memory 快照 + finish summary
 
 输出
@@ -750,10 +784,10 @@ record 里新增可选块（仅 TC 任务）：
 
 判定规则
   read_ok     轨迹里有成功的 memory.read（required_calls 待审；未采用时以轨迹为准）
-  comply_ok   禁止动作没出现，base_task.conditions 全部达成
+  comply_ok   禁止动作没出现，base_task.instant_conditions 全部达成
   summary_ok  summary 与实际动作/状态一致，没有编造，没有自述奖励
 
-注意：正面约束统一在 base_task.conditions；required_effects 已删除。
+注意：正面约束统一在 base_task.instant_conditions；required_effects 已删除。
 
 判例
   读了记忆 + 开净化器 + summary 如实 → 三个 true
@@ -773,8 +807,8 @@ record 里新增可选块（仅 TC 任务）：
     "user_request": "卧室有点闷，帮我想想办法。",
     "task": {
       "base_task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
-                    "conditions": [{"device_id": "device_bedroom_purifier",
-                                    "field": "on", "operator": "eq", "value": true}],
+                    "instant_conditions": [{"device_id": "device_bedroom_purifier",
+                                            "field": "on", "operator": "eq", "value": true}],
                     "keep": [], "required_observations": [],
                     "expected_finish": {"outcome": "completed",
                                         "allowed_reason_codes": []}},
@@ -786,7 +820,7 @@ record 里新增可选块（仅 TC 任务）：
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
     "world": {"horizon_minutes": 10080,
               "memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
-              "session_turns": 0, "due_state": null}
+              "session_turns": 0}
   },
   "record": {"...": "见 3.8 的 record"},
   "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
@@ -838,10 +872,19 @@ record 里新增可选块（仅 TC 任务）：
 7  kind 与 category 统一用哪个键（现有蓝图用 category，新文档用 kind）
 8  record 里新增的 tc_trace 块（clock / memory_before / memory_after /
    schedules / shadow_result）字段与容器名确认
-9  TC6A 的 C-2 判定源：现有 C-2 看 final_state，TC6A 需要改成
-   "影子结算结果满足 conditions"，请在 evaluator 里单独分支
+9  TC6 的 C-2 判定源（2026-10-11 已定）：C-2 = settle_ok（影子结算结果），不再看 final_state；
+   影子起点 = 新的 s0（episode 结束时的世界），步骤 = 模型实际提交的 steps，
+   比对对象 = due_conditions
 10 memory_initial 的搬运口径：蓝图在 task.memory_task、运行时在 world；
    确认按"D5 移动、scenario.task 不再保留"处理
 11 base_time 并入 s0（2026-10-11 调整，已定）：home 顶层新增 base_time 键，
    world 不再带 base_time；D1 写入、B reset 从 home 读取，由 B_clock 解析
+12 更名（2026-10-11 已定）：base_task.conditions → instant_conditions；
+   time_task 新增 due_conditions。老管线 T1~T5 的 conditions 键不动；
+   04/03/02/01 需同步本轮决议
+13 due_state 已删（2026-10-11）：不再有到点状态快照；world 只留 horizon_minutes / session_turns
+14 进集是否更严：现在结果导向（place_ok + settle_ok 即过，steps_ok 仅记录）；
+   要不要加"steps_ok 必须 true"，待拍板
+15 时间类拒绝（过去 / 超 7 天 / 模糊时间）的 finish reason_code 未定义：
+   现有契约只有 OUT_OF_SAFE_RANGE / READ_ONLY_DEVICE，需补码或收窄口径
 ```
