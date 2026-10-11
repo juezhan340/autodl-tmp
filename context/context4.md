@@ -5,7 +5,7 @@
 
 ## 1. 当前停在哪
 
-2026-10-11 补记：GRPO 部分最后一次核对是 10-10，主训练 52/64 次更新、4720/6000 条轨迹，status=running；10-11 服务器端口 31037 连不上，未再核对。实时状态一律看 active_run.json → training_status.json；若已跑完，先看 checkpoint-full500 和自动最终评测。下面 1~6 节的数字是 10-06 快照，保留作历史对照。
+2026-10-11 补记：GRPO 部分最后一次核对是 10-10，主训练 52/64 次更新、4720/6000 条轨迹，status=running；10-11 服务器端口 31037 连不上，未再核对。实时状态一律看 active_run.json → training_status.json；若已跑完，先看 checkpoint-full500 和自动最终评测。服务器恢复后先 git pull --rebase 对齐云端，再继续核对。下面 1~6 节的数字是 10-06 快照，保留作历史对照。
 
 1.5B的3轮LoRA SFT与四模型固定200评测已完成。100任务GRPO阶段也已训练、评测完成。正式500任务池已经全部首遍覆盖，主训练仍按原方案反馈复访；截至上述快照为39/64次实际更新、872个候选组、1248条采用轨迹，status=running，无新错误，固定SFT参考未变。**500/500是任务覆盖数，不表示整轮训练已经结束。**
 
@@ -143,47 +143,128 @@ GRPO代码      training/10-5_grpo/，Python及配置均配中文md
 
 ## 7. 1007 阶段：新任务族设计进度（当前前沿）
 
-10-07 起进入新任务族设计，文档集中在 `newdoc/1007推进文档/`。
+### 7.1 为什么要加这两族任务
+
+现有 T1~T5 都是"即时任务"：用户说一句话，模型在最多 12 轮里把设备操作完就结束。真实家居里还有两类能力没被覆盖：一是把事安排到未来某个时刻去做，二是跨步骤、跨回合记住偏好与约束。所以这一轮新增 TC6（时间调度）与 TC7（记忆），并把它们做成能独立生成、独立评测的数据管线。设计文档全部在 `newdoc/1007推进文档/`。
+
+### 7.2 TC6 时间调度是什么
 
 ```text
-两条新管线
-  TC6 时间调度   TC6A 绝对时间、TC6B 相对时间；一次性预约，不做持久规则
-  TC7 记忆       TC7A 读预置记忆（单轮）、TC7B 单轮内读写、TC7C 多轮会话（轮间不 reset）
+定位     一次性预约，不做持久规则（manage_rule 不实现）
+TC6A     绝对时间："今晚10点把客厅灯关掉"
+         期望轨迹：inspect_time 读 now → 算出 at="2026-10-10 22:00"
+                   → time_control.schedule(steps=[关客厅灯]) → finish
+TC6B     相对时间："40分钟后把加湿器关掉"
+         期望轨迹：读 now 后做加法 → at="2026-10-10 10:10" → 写单 → finish
+计分     两段：下单（at 与 due_steps 对）+ 结算（影子执行结果满足 base_task.conditions）
+边界     过去时间、超 7 天 → 拒绝；"每晚"这类持久规则不收录；
+         相对偏移暂定 5~720 分钟、允许跨天（23:40 + 40 分钟 = 次日 00:20）
+```
 
-已定关键决策
-  时间机制   静止时间：now 全程冻结、不推进、无 tick；到点执行用影子执行验证；
-             due_state 只保留"目标已达成/被别人改过"，掉线不处理
-  时间表示   YYYY-MM-DD HH:MM，分钟精度，不存星期；7 天窗口；base_time 由 D1 抽样
-  任务结构   task = base_task / time_task / memory_task；intent 与 expected_finish 必填；
-             time_task、memory_task 可为 {}（老任务只有 base_task）
-  字段命名   time_mention、at_time_expected、offset_minutes、due_steps、
-             memory_initial、memory_expected、forbidden_actions、required_calls（待审）
-             已删除：action_steps、required_effects（正面约束统一写 base_task.conditions）
-  存储方案   方案 3（写入时分层）：判定真值进 task、世界初值进 world；
-             蓝图真实键 blueprint_id / category / home(s0) / task / user_request；
-             memory_initial 蓝图在 task.memory_task，D5 搬运到 scenario.world 供 B reset
-  数据管线   新路径 data_tc/、D0_templates_tc/、data_raw_tc/、data_processed_tc/、
-             eval_sets/TC_20261010_v1/；老管线只读不改
-  抽样       户型/设备/画像/时间继续抽样；记忆不抽样，由 D2 依据真实 s0 与画像生成
-  工具面     TC6/TC7 下发全部 8 个工具；T1~T5 不变
-  其他       轮数上限 10→12（文档已改、代码待改）；新增空气净化器（文档已写、目录待加）
+### 7.3 时间机制选型：为什么用"静止时间"
 
-文档地图
-  01  总体方案（TC6/TC7 定义、ABCD、仿真器与数据管线方向）
-  02  时间机制对比（照搬 SimuHome 内核 vs 静止时间；已选静止时间）
-  03  两条新管线设计（路径、ABCD、13 个提示词、评测方案）
-  04  字段清单与存储方案（A.1~A.17 / C.1~C.26；已选方案 3；待审清单）
-  05  TC6A 与 TC7A 完整管线示例（提示词→例子→轨迹→数据集；当前对齐基准）
-  对齐_目前方案与交付接口 / 对齐_一次性调度与持久化调度（MCP 侧接口基准，10-09 修订）
+```text
+两条路线（02 文档对比过）
+  照搬 SimuHome 的 tick 内核：时间会走、有事件队列，需要连续状态演化，实现和 RL 成本都高
+  静止时间（已选）：now 全程冻结，不推进、无 tick
 
-05 文档的关键口径
-  蓝图：blueprint_id / category / tc_schema / home(s0) / task 三块 / user_request / world
-  world = base_time / horizon_minutes / session_turns / due_state
-  D5 产出沿用 {scenario, record, labels, category, d6, d6_votes}
-  新增标签：TC6A place_ok / steps_ok / settle_ok；TC7A read_ok / comply_ok / summary_ok
-  TC6A 的 C-2 改走影子结算（evaluator 待改）；record 拟新增 tc_trace 块
+到点是否生效怎么验证：影子执行
+  copy 一份世界状态 → 把预约的 due_steps 应用上去 → 看结果是否满足期望
+  真实状态不变，训练/评测的 rollout 成本与现在一致，同一任务可复现
 
-待拍板/待落地
+配套决定
+  模型不能推进时间；全工具下发时它只能写单/查未执行单/取消
+  due_state（到点状态快照）只保留"目标已达成 / 被别人改过"；设备掉线不处理
+  格式 YYYY-MM-DD HH:MM，分钟精度、不存星期；窗口 7 天；内部用整数分钟
+  base_time 每局冻结（B reset 时解析成 now），由 D1 从时间池抽样
+```
+
+### 7.4 TC7 记忆是什么
+
+```text
+三类子任务
+  TC7A 读预置记忆（单轮）：记忆里预先写好一段偏好（如"对花粉过敏，别开窗"），
+       用户请求不复述它；模型要先 memory.read，再按约束行动
+  TC7B 单轮内读写：用户一边让记住、一边让做事（"记住睡觉关客厅灯；顺便把灯调暗"），
+       模型要分清哪句是记忆、哪句是现在就要做
+  TC7C 多轮不 reset：一个会话 2~3 轮共享环境与记忆；第 1 轮写、第 2 轮用、第 3 轮查状态
+
+判定口径
+  TC7A read_ok（读过记忆）/ comply_ok（不违规且达成条件）/ summary_ok（如实描述）
+  TC7B memory_expected（写对内容）+ base_task.conditions（真实动作达成）
+  TC7C 逐轮成功 + 跨轮使用 + 会话结束记忆清空（不串到下一个任务）
+```
+
+### 7.5 数据结构与命名（已定）
+
+```text
+task 分三块（老任务只有 base_task；time/memory 块可为 {}）
+  base_task    intent / conditions / keep / required_observations / expected_finish
+               （intent 与 expected_finish 必填、不能为空）
+  time_task    time_mention / at_time_expected / due_steps（相对题还有 offset_minutes）
+  memory_task  memory_initial / memory_expected / forbidden_actions / required_calls / turns
+
+蓝图（沿用现有键）blueprint_id / category / home(s0) / task / user_request
+  + world（base_time / horizon_minutes / session_turns / due_state）+ 顶层 tc_schema
+  存储用方案 3（写入时分层）；memory_initial 蓝图在 task.memory_task，
+  D5 组装 scenario 时搬运到 scenario.world.memory_initial 供 B reset
+
+改名记录
+  at_expr → time_mention；at_expected → at_time_expected；任务侧 steps → due_steps；
+  memory_seed → memory_initial；memory_write_expected → memory_expected
+已删除
+  action_steps（要求完整动作路线，与"终态达标即可"的判定口径冲突）
+  required_effects（与 base_task.conditions 重复；正面约束统一写 conditions）
+待审
+  required_calls（"必须调用过某工具"，用于 TC7A 读记忆 / TC7C 第 2 轮用记忆）
+```
+
+### 7.6 数据管线与提示词（设计完成，待实现）
+
+```text
+新路径（老管线只读不改）
+  data_tc/（代码）、D0_templates_tc/（提示词）、data_raw_tc/、data_processed_tc/、
+  eval_sets/TC_20261010_v1/
+提示词 13 个
+  5 个出题（TC6A/TC6B/TC7A/TC7B/TC7C）+ 5 个写用户话 + 2 个审查 + 1 个 D6 记忆复核
+抽样与生成
+  户型/设备/画像/时间继续抽样；记忆不抽样，由 D2 依据本轮真实 s0 与画像生成
+  （家里没有窗户就不能写"别开窗"）
+工具面
+  TC6/TC7 的模型看到全部 8 个工具；T1~T5 维持现状
+其他
+  轮数上限 10→12（文档已改、代码待改）；新增空气净化器，只有开关，
+  文档已写、设备目录与 B_schema 待加
+```
+
+### 7.7 评测与产物结构
+
+```text
+D5 行结构沿用 {scenario, record, labels, category, d6, d6_votes}
+  record = {scenario_id, turns, final_state, finish, protocol}
+  拟新增可选 tc_trace（clock / memory_before / memory_after / schedules / shadow_result）
+新增标签
+  TC6A  place_ok / steps_ok / settle_ok（C-2 改为影子结算，evaluator 待改）
+  TC7A  read_ok / comply_ok / summary_ok
+评测集
+  每子类先 30 条起步，含过去时间、超 7 天、跨午夜、模糊表述等负例；
+  老 200 条固定测试继续做回归，防止新任务训练破坏原有能力
+```
+
+### 7.8 文档地图与当前待办
+
+```text
+01  总体方案（TC6/TC7 定义、ABCD、仿真器与数据管线方向）
+02  时间机制对比（照搬 SimuHome 内核 vs 静止时间；已选静止时间）
+03  两条新管线设计（路径、ABCD、13 个提示词、评测方案）
+04  字段清单与存储方案（A.1~A.17 / C.1~C.26；已选方案 3；待审清单）
+05  TC6A 与 TC7A 完整管线示例（提示词→例子→轨迹→数据集；当前对齐基准）
+对齐_目前方案与交付接口 / 对齐_一次性调度与持久化调度（MCP 侧接口基准，10-09 修订）
+
+待拍板
   required_calls 是否采用；tc_trace 字段；persona_id 是否入蓝图；kind vs category；
-  memory_initial 的 D5 搬运口径；C-2 分支；12 轮与净化器的代码/数据落地
+  memory_initial 的 D5 搬运口径；TC6A 的 C-2 分支
+待落地（代码/数据）
+  12 轮上限；空气净化器（设备目录 + B_schema + A 提示词设备常识）；
+  A 提示词附加段与 8 工具表；data_tc 管线代码与 13 个提示词落盘
 ```
