@@ -20,11 +20,12 @@
 >   4  结算对模型实际提交的 steps 跑影子，结果对即过（steps_ok 只记一致性）；
 >      due_conditions 的 eq 比 value、ge/le 与 T1~T5 同口径（比 s0 初值严格变向）
 >   5  C-2 对 TC6 = settle_ok（影子结算），不再看 final_state
-> 设备变更（2026-10-12 补记）：新增空气净化器 air_purifier（id_token=purifier，
+> 设备变更（2026-10-12 记）：计划新增空气净化器 air_purifier（id_token=purifier，
 > device_id 形如 device_bedroom_purifier），只有 turn_on / turn_off 两个动作，
-> 没有 mode / level / target；TC6 / TC7 场景通用（如"花粉过敏 → 开净化器"），
-> 本文 §0 的示例家与 §3 TC7A 全程用它；老设备集与老数据不动。
-> 待落地：D0_devices.jsonl 加行、B_schema 白名单、D1 挂载、A_policy 设备常识（见 §5 第 4 条）。
+> state 只有 {on}，没有 mode / level / target；用于 TC6 / TC7 场景（如"花粉过敏 → 开净化器"）。
+> 本版文档的案例暂不使用它——全部案例只用现有设备，等设备落地后再进示例。
+> 老设备集与老数据不动。待落地：D0_devices.jsonl 加行、B_schema 白名单、D1 挂载、
+> A_policy 设备常识（见 §5 第 4 条）。
 
 ## 0 一屏
 
@@ -56,11 +57,11 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
 
   base_time = 2026-10-10 09:30
   家：客厅主灯 device_living_light、卧室空调 device_bedroom_climate、
-      卧室空气净化器 device_bedroom_purifier、卧室加湿器 device_bedroom_humidifier
+      卧室加湿器 device_bedroom_humidifier
   画像：p21，花粉过敏，晚上容易鼻塞
 
   TC6A  用户话："今晚10点帮我把客厅灯关掉"
-  TC7A  用户话："卧室有点闷"（记忆里预置"对花粉过敏，别开窗"）
+  TC7A  用户话："卧室有点闷"（记忆里预置"对花粉过敏，别开窗；闷了先开空调"）
 ```
 
 ## 1 公共部分（两类共用）
@@ -100,7 +101,7 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
       {"room_id": "room_living", "display_name": "客厅",
        "device_ids": ["device_living_light"]},
       {"room_id": "room_bedroom", "display_name": "卧室",
-       "device_ids": ["device_bedroom_climate", "device_bedroom_purifier",
+       "device_ids": ["device_bedroom_climate",
                       "device_bedroom_humidifier"]}
     ],
     "devices": [
@@ -233,7 +234,7 @@ TC6A 是什么
 本轮画像：{"persona_id":"p21","name":"李岚","age":29,"habits":"花粉过敏，晚上容易鼻塞"}
 本轮 s0：{"rooms":[{"room_id":"room_living","device_ids":["device_living_light"]},
           {"room_id":"room_bedroom","device_ids":["device_bedroom_climate",
-           "device_bedroom_purifier","device_bedroom_humidifier"]}], "devices":[...]}
+           "device_bedroom_humidifier"]}], "devices":[...]}
 本轮 base_time："2026-10-10 09:30"
 正确输出：
 {"base_task": {"intent":"今晚睡前把客厅灯关掉",
@@ -312,7 +313,7 @@ task：{"base_task":{"intent":"今晚睡前把客厅灯关掉",
                     "due_conditions":[{"device_id":"device_living_light","field":"on",
                                        "operator":"eq","value":false}]},
        "memory_task":{}}
-可用显示名：客厅主灯、卧室空调、卧室空气净化器、卧室加湿器
+可用显示名：客厅主灯、卧室空调、卧室加湿器
 正确输出：今晚10点帮我把客厅灯关掉吧。
 
 本轮输入
@@ -552,7 +553,7 @@ TC7A 是什么
 硬规则
   memory_initial ≤200 token，必须是"偏好/约束"，不能是"现在就做某个动作"的指令
   memory_initial 必须与本轮 s0 吻合：s0 没有窗户就不能写"别开窗"；
-  s0 没有空气净化器就不能写"开净化器"
+  s0 没有空调就不能写"开空调"
   memory_initial 与用户请求相关，但请求不能直接复述它
   forbidden_actions 1~2 条，必须是 s0 里真实存在设备的动作
   正面约束（必须达成的效果）写进 base_task.instant_conditions；不再使用 required_effects
@@ -560,9 +561,9 @@ TC7A 是什么
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC7A）
 
 小例子
-对  memory_initial="用户对花粉过敏，别开窗；闷了先开空气净化器"
+对  memory_initial="用户对花粉过敏，别开窗；闷了先开空调"
     forbidden_actions=["开窗通风类动作"]
-    base_task.instant_conditions=[{"device_id":"device_bedroom_purifier","field":"on",
+    base_task.instant_conditions=[{"device_id":"device_bedroom_climate","field":"on",
                                    "operator":"eq","value":true}]
 错  memory_initial="把客厅灯关掉"（这是动作指令，不是偏好记忆）
 错  s0 里没有窗户却写"别开窗"
@@ -570,15 +571,15 @@ TC7A 是什么
 完整例子
 本轮画像：{"persona_id":"p21","name":"李岚","age":29,"habits":"花粉过敏，晚上容易鼻塞"}
 本轮 s0：{"rooms":[{"room_id":"room_bedroom","device_ids":["device_bedroom_climate",
-          "device_bedroom_purifier","device_bedroom_humidifier"]}], "devices":[...]}
+          "device_bedroom_humidifier"]}], "devices":[...]}
 正确输出：
-{"base_task": {"intent":"卧室闷，按记忆优先开净化器而不是开窗",
-               "instant_conditions":[{"device_id":"device_bedroom_purifier","field":"on",
+{"base_task": {"intent":"卧室闷，按记忆优先开空调而不是开窗",
+               "instant_conditions":[{"device_id":"device_bedroom_climate","field":"on",
                                       "operator":"eq","value":true}],
                "keep":[], "required_observations":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {},
- "memory_task": {"memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器",
+ "memory_task": {"memory_initial":"用户对花粉过敏，别开窗；闷了先开空调",
                  "memory_expected":"",
                  "forbidden_actions":["开窗通风类动作"],
                  "required_calls":[]}}
@@ -594,13 +595,13 @@ base_time：{{base_time}}
 ### 3.2 D2-1 输出（TC7A task）
 
 ```json
-{"base_task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
-               "instant_conditions": [{"device_id": "device_bedroom_purifier", "field": "on",
+{"base_task": {"intent": "卧室闷，按记忆优先开空调而不是开窗",
+               "instant_conditions": [{"device_id": "device_bedroom_climate", "field": "on",
                                        "operator": "eq", "value": true}],
                "keep": [], "required_observations": [],
                "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}},
  "time_task": {},
- "memory_task": {"memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+ "memory_task": {"memory_initial": "用户对花粉过敏，别开窗；闷了先开空调",
                  "memory_expected": "",
                  "forbidden_actions": ["开窗通风类动作"],
                  "required_calls": []}}
@@ -628,25 +629,25 @@ TC7A 没有 due_conditions（time_task 为空）；它的动作在当下真执�
   只说这一句话，不要解释
 
 小例子
-对  memory_initial="用户对花粉过敏，别开窗；闷了先开空气净化器"
+对  memory_initial="用户对花粉过敏，别开窗；闷了先开空调"
     → "卧室有点闷。"
 对  memory_initial="用户怕冷，睡觉空调不要低于26度"
     → "卧室有点冷。"
-错  "卧室有点闷，开净化器别开窗"（直接复述了记忆）
-错  "把 device_bedroom_purifier 打开"（泄露 id）
+错  "卧室有点闷，开空调别开窗"（直接复述了记忆）
+错  "把 device_bedroom_climate 打开"（泄露 id）
 
 完整例子
-intent：卧室闷，按记忆优先开净化器而不是开窗
-task：{"base_task":{"intent":"卧室闷，按记忆优先开净化器而不是开窗",
-                    "instant_conditions":[{"device_id":"device_bedroom_purifier","field":"on",
+intent：卧室闷，按记忆优先开空调而不是开窗
+task：{"base_task":{"intent":"卧室闷，按记忆优先开空调而不是开窗",
+                    "instant_conditions":[{"device_id":"device_bedroom_climate","field":"on",
                                            "operator":"eq","value":true}],
                     "keep":[],"required_observations":[],
                     "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
        "time_task":{},
-       "memory_task":{"memory_initial":"用户对花粉过敏，别开窗；闷了先开空气净化器",
+       "memory_task":{"memory_initial":"用户对花粉过敏，别开窗；闷了先开空调",
                       "memory_expected":"","forbidden_actions":["开窗通风类动作"],
                       "required_calls":[]}}
-可用显示名：卧室空调、卧室空气净化器、卧室加湿器
+可用显示名：卧室空调、卧室加湿器
 正确输出：卧室有点闷，帮我想想办法。
 
 本轮输入
@@ -678,7 +679,7 @@ user_request = "卧室有点闷，帮我想想办法。"
 
 判例
   用户话 "卧室有点闷" + 记忆"花粉过敏别开窗" → accept
-  用户话 "把净化器打开"（直接说了答案）→ HARD_LEAKAGE
+  用户话 "把空调打开"（直接说了答案）→ HARD_LEAKAGE
   用户话 "客厅灯太亮了"（与记忆场景无关）→ TARGET_NOT_COVERED
 
 本轮输入
@@ -705,12 +706,12 @@ user_request：{{user_request}}
 步骤
   1  一致性：memory_initial 提到的设备/能力必须在 s0 里存在
   2  可行性：base_task.instant_conditions 对应的动作在 s0 中合法
-  3  本地试答（老 D4 同一套）：copy s0 → instant_conditions 反推写动作（开净化器）
+  3  本地试答（老 D4 同一套）：copy s0 → instant_conditions 反推写动作（开空调）
      → 在副本上试打，必须被 B 接受
      （TC7A 没有阶段 B：没有 due_conditions；动作在 episode 里真执行，无结算影子）
 输出
   {"oracle_ok": true, "shadow_state_diff":
-   {"device_bedroom_purifier": {"on": {"from": false, "to": true}}},
+   {"device_bedroom_climate": {"on": {"from": false, "to": true}}},
    "reason": "记忆与 s0 一致；按记忆行动可达成 base_task.instant_conditions"}
 ```
 
@@ -739,11 +740,11 @@ D5 落盘的 record（与现有结构同构）
                      "call_id": "turn_1_0"}],
      "events": [{"call_id": "turn_1_0", "tool_name": "memory",
                  "result": {"ok": true,
-                            "data": {"text": "用户对花粉过敏，别开窗；闷了先开空气净化器"}}}],
+                             "data": {"text": "用户对花粉过敏，别开窗；闷了先开空调"}}}],
      "observation_after": {同上，追加记忆文本}},
     {"turn": 2,
      "tool_calls": [{"name": "inspect_device",
-                     "arguments": {"device_id": "device_bedroom_purifier"},
+                     "arguments": {"device_id": "device_bedroom_climate"},
                      "call_id": "turn_2_0"}],
      "events": [{"call_id": "turn_2_0", "tool_name": "inspect_device",
                  "result": {"ok": true,
@@ -751,7 +752,7 @@ D5 落盘的 record（与现有结构同构）
      "observation_after": {同上}},
     {"turn": 3,
      "tool_calls": [{"name": "execute_action",
-                     "arguments": {"device_id": "device_bedroom_purifier",
+                     "arguments": {"device_id": "device_bedroom_climate",
                                    "action": "turn_on", "params": {}},
                      "call_id": "turn_3_0"}],
      "events": [{"call_id": "turn_3_0", "tool_name": "execute_action",
@@ -763,14 +764,14 @@ D5 落盘的 record（与现有结构同构）
     {"turn": 4,
      "tool_calls": [{"name": "finish",
                      "arguments": {"outcome": "completed",
-                                   "summary": "卧室闷，按您的习惯开了空气净化器，没有开窗。"},
+                                   "summary": "卧室闷，按您的习惯开了空调，没有开窗。"},
                      "call_id": "turn_4_0"}],
      "events": [],
      "observation_after": {同上}}
   ],
-  "final_state": {"device_bedroom_purifier": {"on": true},
+  "final_state": {"device_bedroom_climate": {"on": true},
                   "...": "其余设备状态原样"},
-  "finish": {"summary": "卧室闷，按您的习惯开了空气净化器，没有开窗。",
+  "finish": {"summary": "卧室闷，按您的习惯开了空调，没有开窗。",
              "outcome": "completed"},
   "protocol": {"terminated": true, "truncated": false,
                "finish_requested": true, "turn_count": 4}
@@ -778,8 +779,8 @@ D5 落盘的 record（与现有结构同构）
 
 record 里新增可选块（仅 TC 任务）：
 {"tc_trace": {"clock": {"base_time": "2026-10-10 09:30", "now": "2026-10-10 09:30"},
-              "memory_before": "用户对花粉过敏，别开窗；闷了先开空气净化器",
-              "memory_after": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+              "memory_before": "用户对花粉过敏，别开窗；闷了先开空调",
+              "memory_after": "用户对花粉过敏，别开窗；闷了先开空调",
               "schedules": []}}
 ```
 
@@ -805,8 +806,8 @@ record 里新增可选块（仅 TC 任务）：
 注意：正面约束统一在 base_task.instant_conditions；required_effects 已删除。
 
 判例
-  读了记忆 + 开净化器 + summary 如实 → 三个 true
-  没读记忆 + 碰巧开净化器 → read_ok=false，其余 true
+  读了记忆 + 开空调 + summary 如实 → 三个 true
+  没读记忆 + 碰巧开空调 → read_ok=false，其余 true
   读了记忆 + 开窗 → comply_ok=false
   summary 说"已关闭空调"但轨迹没有 → summary_ok=false
 ```
@@ -821,8 +822,8 @@ record 里新增可选块（仅 TC 任务）：
     "home": {"...": "s0 全量（与蓝图 home 相同）"},
     "user_request": "卧室有点闷，帮我想想办法。",
     "task": {
-      "base_task": {"intent": "卧室闷，按记忆优先开净化器而不是开窗",
-                    "instant_conditions": [{"device_id": "device_bedroom_purifier",
+      "base_task": {"intent": "卧室闷，按记忆优先开空调而不是开窗",
+                    "instant_conditions": [{"device_id": "device_bedroom_climate",
                                             "field": "on", "operator": "eq", "value": true}],
                     "keep": [], "required_observations": [],
                     "expected_finish": {"outcome": "completed",
@@ -834,7 +835,7 @@ record 里新增可选块（仅 TC 任务）：
     },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
     "world": {"horizon_minutes": 10080,
-              "memory_initial": "用户对花粉过敏，别开窗；闷了先开空气净化器",
+              "memory_initial": "用户对花粉过敏，别开窗；闷了先开空调",
               "session_turns": 0}
   },
   "record": {"...": "见 3.8 的 record"},
