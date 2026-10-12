@@ -79,17 +79,24 @@ def describe(values: list[int]) -> dict:
 
 def main() -> None:
     """逐条统计输入 token 与监督 token。"""
+    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     tokenizer = AutoTokenizer.from_pretrained(str(TOKENIZER_DIR), local_files_only=True)
     original_template = tokenizer.chat_template
     tokenizer.chat_template = TRAIN_TEMPLATE
     input_lengths: list[int] = []
     supervised: list[int] = []
     raw_chars: list[int] = []
+    assistant_turns: list[int] = []
+    cumulative_prefill: list[int] = []
+    peak_context: list[int] = []
     per_category: dict[str, list[int]] = {}
     tools_mismatch = 0
     template_mismatch = 0
+    per_row: list[dict] = []
     with open(DATA, encoding="utf-8") as handle:
         for line in handle:
+            if limit and len(input_lengths) >= limit:
+                break
             row = json.loads(line)
             messages, tools_match = reconstruct_messages(row)
             tools_mismatch += 0 if tools_match else 1
@@ -118,17 +125,57 @@ def main() -> None:
             input_lengths.append(n_input)
             supervised.append(n_sup)
             raw_chars.append(len(line))
+            # rollout 口径：逐轮生成时，每轮先 prefill 当时的上下文再 decode。
+            n_turns = sum(1 for m in messages if m["role"] == "assistant")
+            assistant_turns.append(n_turns)
+            turn_prefill = 0
+            last_context = 0
+            for index, message in enumerate(messages):
+                if message["role"] != "assistant":
+                    continue
+                context_len = len(
+                    tokenizer.apply_chat_template(
+                        messages[:index],
+                        tokenize=True,
+                        return_dict=True,
+                        add_generation_prompt=True,
+                    )
+                    ["input_ids"]
+                )
+                turn_prefill += context_len
+                last_context = context_len
+            cumulative_prefill.append(turn_prefill)
+            peak_context.append(last_context)
             per_category.setdefault(row["category"], []).append(n_input)
+            per_row.append(
+                {
+                    "scenario": row["scenario"]["scenario_id"],
+                    "category": row["category"],
+                    "turns": n_turns,
+                    "input_tokens": n_input,
+                    "output_tokens": n_sup,
+                    "prompt_only": n_input - n_sup,
+                    "cumulative_prefill": turn_prefill,
+                    "peak_context": last_context,
+                }
+            )
     report = {
         "rows": len(input_lengths),
         "tools_mismatch_rows": tools_mismatch,
         "template_mismatch_rows": template_mismatch,
         "input_tokens": describe(input_lengths),
         "supervised_tokens": describe(supervised),
+        "prompt_only_tokens_mean": round(
+            sum(i - s for i, s in zip(input_lengths, supervised)) / len(input_lengths), 1
+        ),
+        "assistant_turns": describe(assistant_turns),
+        "rollout_cumulative_prefill": describe(cumulative_prefill),
+        "rollout_peak_context": describe(peak_context),
         "raw_row_chars": describe(raw_chars),
         "per_category_input_mean": {
             key: round(sum(values) / len(values), 1) for key, values in sorted(per_category.items())
         },
+        "per_row": per_row,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
