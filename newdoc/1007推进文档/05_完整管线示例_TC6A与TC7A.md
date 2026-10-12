@@ -12,15 +12,15 @@
 > 同时补全 2.3 / 3.3 的 D2-2 示例——task 三块（base_task / time_task / memory_task）都要进提示词。
 > 2026-10-11 决议（TC 判定口径）：
 >   1  base_task.conditions 更名 instant_conditions（即时条件；TC6 固定为空数组）；
->      time_task 新增 due_conditions（到点条件，影子结算的判定对象）
+>      time_task 新增 due_conditions（到点条件，定时终态的判定对象）
 >   2  due_state 删除：不再有"到点状态快照"，到点判定直接看 due_conditions
 >   3  影子起点：D4 = 出题时的 s0（同一副本先本地试答、再影子试答，顺序叠加）；
->      结算 = "新的 s0" = episode 结束时的世界（当前时刻执行完的结果；
+>      定时终态判定 = "新的 s0" = episode 结束时的世界（当前时刻执行完的结果；
 >      静止时间下就是到点时的世界）
->   4  结算对模型实际提交的 steps 跑影子，结果对即过（steps_ok 只记一致性）；
+>   4  定时终态对模型实际提交的 steps 跑影子，结果对即过（steps_ok 只记一致性）；
 >      due_conditions 的 eq 比 value、ge/le 与 T1~T5 同口径（比 s0 初值严格变向）
->   5  TC6 标签编号（2026-10-12 调整）：旧 C-1~C-4 沿用；新增按序追加 C-5 下单、C-6 结算；
->      C-2 对 TC6 不适用（恒过），结算不再并进 C-2
+>   5  TC6 标签（2026-10-12 调整）：C-2 扩展为"即时终态 + 定时终态"双分支（原"结算"并入 C-2）；
+>      新增 C-5 下单；编号到 C-5 为止
 > 设备变更（2026-10-12 记）：计划新增空气净化器 air_purifier（id_token=purifier，
 > device_id 形如 device_bedroom_purifier），只有 turn_on / turn_off 两个动作，
 > state 只有 {on}，没有 mode / level / target；用于 TC6 / TC7 场景（如"花粉过敏 → 开净化器"）。
@@ -170,7 +170,7 @@ task 的三块：
                 TC6 固定为空数组——现在不做任何事）
   time_task    时间相关：time_mention / at_time_expected / due_steps / due_conditions
                （TC6B 还有 offset_minutes）；非时间任务为 {}
-               （due_conditions = "到点执行后"的目标，影子结算判它；
+               （due_conditions = "到点执行后"的目标，定时终态判它；
                 eq 比 value，ge/le 比 s0 初值严格变向，与 T1~T5 同口径）
   memory_task  记忆相关：memory_initial / memory_expected / forbidden_actions /
                required_calls / turns；非记忆任务为 {}
@@ -220,7 +220,7 @@ TC6A 是什么
   time_mention 不能是"每晚/每天"这类持久规则；出现直接判废,不能模糊成今晚睡前，必须准确为某个时间点
   time_mention 时间点准确，但不能直接写标准格式（那是答案，不是题面说法）
   instant_conditions 描述当前时刻要满足的状态；TC6A 固定写空数组
-  due_conditions 描述涉及时间任务"到点执行后终态应满足什么"（影子结算的判定对象）
+  due_conditions 描述涉及时间任务"到点执行后终态应满足什么"（定时终态的判定对象）
   时间相关字段全部放 time_task；memory_task 固定为 {}（TC6A 不用记忆）
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC6A）
 
@@ -387,7 +387,7 @@ user_request：{{user_request}}
   另外     静态检查：due_steps 与 due_conditions 引用的 device_id / field / action / params
            在 s0 中合法（due_steps 只做字面体检——写话素材、steps_ok 参考）
            时间检查：at_time_expected 晚于 base_time 且 ≤ base_time + 10080 分钟
-  对齐说明 与结算链同构：episode 改变世界 → 结算在新 s0 上判 due_conditions；
+  对齐说明 与判定链同构：episode 改变世界 → 定时终态在新 s0 上判 due_conditions；
            D4 换成"本地试答改变副本 → 影子试答判 due_conditions"，两段一一对应
 输出
   {"oracle_ok": true,
@@ -480,15 +480,22 @@ record 里新增可选块（仅 TC 任务）：
               "shadow_result": {"device_living_light": {"on": {"from": true, "to": false}}}}}
 
 注意：final_state 里客厅灯仍是 on=true——静止时间下预约不真正执行；
-"到点会不会变成 false"由交互结束时的结算判定（见下）算。
-结算影子的起点 = 新的 s0，即本 episode 结束时的世界（当前时刻执行完的结果；
+"到点会不会变成 false"由交互结束时的"定时终态"判定（见下）算。
+定时终态影子的起点 = 新的 s0，即本 episode 结束时的世界（当前时刻执行完的结果；
 静止时间下这就是"到点时的世界"），不是出题时的旧 s0。
 
 交互一结束（同一次 C.run 调用内），C 自动打标签（不调模型）。
-旧四件套沿用，TC6 新增的按序追加在 C-4 之后：
+C-2 本次做了调整：原来只有"即时终态"，现在加上"定时终态"，两个分支串成一条线；
+TC6 新增的独立标签订为 C-5 下单：
 
 C-1 协议        finish_requested 为真 且 未 truncated 且 没有一轮多工具（TOO_MANY_TOOL_CALLS）
-C-2 终态        TC6 不适用（instant_conditions 固定为空）→ 恒过；结算不在 C-2 里做
+C-2 终态（调整）  两个分支，共用同一套条件检查器：
+                · 即时终态：final_state 满足 instant_conditions + keep（空数组过；
+                  TC6 中 instant_conditions 固定为空 → 该分支恒过）
+                · 定时终态（原"结算"并入）：影子执行——起点 = 新的 s0（episode 结束时的世界
+                  = 当前时刻执行完的结果），步骤 = 模型实际提交的 steps（不换成 due_steps；
+                  结果对就可以），比对 = 影子终态满足 due_conditions（eq 比 value；
+                  ge/le 比 s0 初值严格变向）→ settle_ok（掉线本期不处理）
 C-3 观察        required_observations 都有成功 inspect（空数组过；TC6A 固定为空 → 恒过）
 C-4 finish      outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                 expected_finish.allowed_reason_codes 里；出现 facts 失败；
@@ -496,15 +503,10 @@ C-4 finish      outcome 与 expected_finish.outcome 对齐；refused 的 reason_
 C-5 下单（新）   预约单建立 且 at 与 at_time_expected 分钟级相等（place_ok）
                 且 没有"该写单却直接执行"（time_error = false）
                 · 明细：place_ok、time_error；steps_ok 仅记录、不挡 C-5（结果导向）
-C-6 结算（新）   影子执行：起点 = 新的 s0（episode 结束时的世界 = 当前时刻执行完的结果）；
-                步骤 = 模型实际提交的 steps（不换成 due_steps；结果对就可以）；
-                比对 = 影子终态满足 due_conditions（eq 比 value；ge/le 比 s0 初值严格变向）
-                → settle_ok（掉线本期不处理）
-                · 明细：settle_ok
 
-同行落盘：{"C-1": true, "C-2": true, "C-3": true, "C-4": true, "C-5": true, "C-6": true,
+同行落盘：{"C-1": true, "C-2": true, "C-3": true, "C-4": true, "C-5": true,
           "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
-（明细键保留供分析：C-5 ↔ place_ok / steps_ok / time_error；C-6 ↔ settle_ok；
+（明细键保留供分析：C-5 ↔ place_ok / steps_ok / time_error；settle_ok 属 C-2 的定时终态分支；
   time_error = 该写单却直接 execute_action，终态碰巧满足也算错）
 ```
 
@@ -513,12 +515,12 @@ C-6 结算（新）   影子执行：起点 = 新的 s0（episode 结束时的�
 ```text
 D6 不重判、不算标签，只做两步：
 
-① 读标签（单独一步）：把本行的 C-1~C-6 读出来当门槛；
+① 读标签（单独一步）：把本行的 C-1~C-5 读出来当门槛；
    四项不全 true → 原样返回，不发起任何语义复核
 ② 处理：TC6A 规则可验证 → d6="跳过"，d6_votes=[]，不发请求
    （对照：TC7 在 3.10 走三票；T1/T2 同样在这里跳过）
 
-D6 只写 d6 / d6_votes；C-1~C-6 来自 2.8 交互结束时 C 自己打的标签，D6 只读不产。
+D6 只写 d6 / d6_votes；C-1~C-5 来自 2.8 交互结束时 C 自己打的标签，D6 只读不产。
 ```
 
 ### 2.10 进数据集
@@ -550,7 +552,7 @@ D6 只写 d6 / d6_votes；C-1~C-6 来自 2.8 交互结束时 C 自己打的标�
               "session_turns": 0}
   },
   "record": {"...": "见 2.8 的 record"},
-  "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true, "C-5": true, "C-6": true,
+  "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true, "C-5": true,
              "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false},
   "category": "TC6A",
   "d6": "跳过",
@@ -559,9 +561,10 @@ D6 只写 d6 / d6_votes；C-1~C-6 来自 2.8 交互结束时 C 自己打的标�
 ```
 
 D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同。
-TC6 进集口径（结果导向；C-1~C-6 定义见 2.8）：C-1 / C-3 / C-4 / C-5 / C-6 全 true
-（C-2 对 TC6 不适用）；其中 C-5 已含 place_ok 与 time_error = false；
-steps_ok 仅记录、不单独卡进集（是否更严见 §5 待确认）。
+TC6 进集口径（结果导向；标签定义见 2.8）：C-1 / C-3 / C-4 / C-5 全 true，
+且 C-2 的"定时终态"分支通过（影子终态满足 due_conditions；"即时终态"分支在 TC6 恒过）；
+其中 C-5 已含 place_ok 与 time_error = false；steps_ok 仅记录、不单独卡进集
+（是否更严见 §5 待确认）。
 
 ## 3 TC7A 完整管线
 
@@ -746,7 +749,7 @@ user_request：{{user_request}}
   2  可行性：base_task.instant_conditions 对应的动作在 s0 中合法
   3  本地试答（老 D4 同一套）：copy s0 → instant_conditions 反推写动作（开空调）
      → 在副本上试打，必须被 B 接受
-     （TC7A 没有阶段 B：没有 due_conditions；动作在 episode 里真执行，无结算影子）
+     （TC7A 没有阶段 B：没有 due_conditions；动作在 episode 里真执行，无定时终态影子）
 输出
   {"oracle_ok": true, "shadow_state_diff":
    {"device_bedroom_climate": {"on": {"from": false, "to": true}}},
@@ -857,12 +860,12 @@ record 里新增可选块（仅 TC 任务）：
 交互一结束（同一次 C.run 调用内），C 自动打标签（不调模型）：
   ① 打 C 标签（C-1~C-4）
      C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具
-     C-2 终态     final_state 满足 instant_conditions 且满足 keep（空数组过）；
+     C-2 终态     （即时终态分支）final_state 满足 instant_conditions 且满足 keep（空数组过）；
                   eq 比 value；ge/le 比 s0 初值严格变向
      C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
      C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                   allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
-  （TC7A 动作在 episode 里真执行，判定看 final_state；没有 TC6 那种结算影子）
+  （TC7A 动作在 episode 里真执行，判定看 final_state；没有 TC6 那种定时终态影子）
 ```
 
 ### 3.9 D0 模板：D6_TC7A.md（语义复核提示词全文）
@@ -898,7 +901,7 @@ record 里新增可选块（仅 TC 任务）：
 ```text
 D6 不重判 C 标签，只做三步：
 
-① 读标签（单独一步）：本行 C-1~C-4 全 true 才继续（TC7 没有 C-5/C-6）；
+① 读标签（单独一步）：本行 C-1~C-4 全 true 才继续（TC7 没有 C-5；C-2 只走"即时终态"分支）；
    否则原样返回，不发起复核
 ② 三票复核（D6_TC7A，模板见 3.9；role=external，三次互相独立）
    产出 read_ok / comply_ok / summary_ok + d6 / d6_votes；
@@ -982,9 +985,9 @@ C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
 7  kind 与 category 统一用哪个键（现有蓝图用 category，新文档用 kind）
 8  record 里新增的 tc_trace 块（clock / memory_before / memory_after /
    schedules / shadow_result）字段与容器名确认
-9  TC6 标签编号（2026-10-11 起，2026-10-12 调整）：旧 C-1~C-4 沿用；TC6 新增按序追加
-   C-5 下单（预约单建立 + at 对 + 不直接执行）、C-6 结算（影子满足 due_conditions）；
-   C-2 对 TC6 不适用（恒过）；明细 place_ok / steps_ok / settle_ok / time_error 保留供分析
+9  TC6 标签（2026-10-11 起，2026-10-12 调整）：C-2 扩展为双分支——"即时终态"（final_state）
+   + "定时终态"（影子推演终态，原"结算"并入）；TC6 新增独立标签订为 C-5 下单；
+   编号到 C-5 为止；明细 place_ok / steps_ok / settle_ok / time_error 保留供分析
 10 memory_initial 的搬运口径：蓝图在 task.memory_task、运行时在 world；
    确认按"D5 移动、scenario.task 不再保留"处理
 11 base_time 并入 s0（2026-10-11 调整，已定）：home 顶层新增 base_time 键，
