@@ -45,7 +45,7 @@
         ↓
   D4 Oracle（不调模型：写单/影子执行/记忆一致性校验）
         ↓
-  D5 跑轨迹（A 提示词 = 老 A_policy + TC 附加段；C 收集 turns）
+  D5 跑轨迹（A 提示词 = 老 A_policy + TC 附加段；C 收集 turns 并打 C-1~C-4）
         ↓
   D6 复核（TC6A 走规则判定；TC7A 走 D6 语义复核）
         ↓
@@ -187,6 +187,22 @@ TC 的 A 提示词 = 老 A_policy.md + TC 附加段
   TC7A 附加段：记忆规则（见 3.8）
 ```
 
+### 1.4 C 标签口径（C-1~C-4，两类共用；沿用现有 evaluator）
+
+```text
+评估器跑完 episode 后打四个程序标签（不调模型）；TC 只改 C-2 的 TC6 分支：
+
+C-1 协议     finish_requested 且未 truncated 且没有一轮多工具（TOO_MANY_TOOL_CALLS）
+C-2 终态     TC6  ：= settle_ok（影子结算结果满足 due_conditions），不看 final_state
+             TC7  ：instant_conditions 全过且 keep 全过（空数组过）
+             口径：eq 比 value；ge/le 比 s0 初值严格变高/变低（keep 只 eq）
+C-3 观察     required_observations 都有成功 inspect（空数组过；TC 本期基本为空）
+C-4 finish   outcome 与 expected_finish 对齐；refused 的 reason_code 必须落在
+             allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
+
+进集条件另有增量键：见 2.10（TC6）、3.10（TC7）与 §5 待确认 14。
+```
+
 ## 2 TC6A 完整管线
 
 ### 2.1 D0 模板：TC6A_task.md（出题提示词全文）
@@ -216,10 +232,10 @@ TC6A 是什么
 硬规则
   at_time_expected 必须晚于 base_time，且在 7 天（10080 分钟）以内，分钟级
   due_steps 1~3 条，设备与动作只能来自本轮 s0
-  time_mention 不能是"每晚/每天"这类持久规则；出现直接判废
-  time_mention 不能直接写标准时刻（那是答案，不是题面说法）
-  instant_conditions 描述"写单这一刻"要满足的状态；TC6A 固定写空数组
-  due_conditions 描述"到点执行后终态应满足什么"（影子结算的判定对象）
+  time_mention 不能是"每晚/每天"这类持久规则；出现直接判废,不能模糊成今晚睡前，必须准确为某个时间点
+  time_mention 时间点准确，但不能直接写标准格式（那是答案，不是题面说法）
+  instant_conditions 描述当前时刻要满足的状态；TC6A 固定写空数组
+  due_conditions 描述涉及时间任务"到点执行后终态应满足什么"（影子结算的判定对象）
   时间相关字段全部放 time_task；memory_task 固定为 {}（TC6A 不用记忆）
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC6A）
 
@@ -476,7 +492,7 @@ record 里新增可选块（仅 TC 任务）：
 标签
   {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
    "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
-  · C-1/C-3/C-4 沿用现有口径（协议 / 取证 / finish 契约）
+  · C-1/C-3/C-4 沿用现有口径（协议 / 观察 / finish 契约；定义见 1.4）
   · C-2 对 TC6 = settle_ok（影子结算结果），不再看 final_state
   · place_ok / steps_ok / settle_ok / time_error 是 TC6 新增键；
     time_error = 该写单却直接 execute_action（终态碰巧满足也算错）
@@ -521,7 +537,7 @@ D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
 ```
 
 D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同。
-TC6 进集口径（2026-10-11 定，结果导向）：C-1 / C-3 / C-4 全 true，
+TC6 进集口径（2026-10-11 定，结果导向；C-1~C-4 定义见 1.4）：C-1 / C-3 / C-4 全 true，
 C-2（= settle_ok）与 place_ok 为 true，time_error = false；
 steps_ok 仅记录、不单独卡进集（是否更严见 §5 待确认）。
 
@@ -850,6 +866,7 @@ record 里新增可选块（仅 TC 任务）：
 ```text
 说明：蓝图里 memory_initial 在 task.memory_task；D5 组装 scenario 时
 移动到 world.memory_initial（上面已是搬运后的运行时视图）。
+C-1~C-4 的定义见 1.4；TC7 的进集判定走 d6（三票复核结果）。
 ```
 
 ## 4 两条管线的涉及文件清单
