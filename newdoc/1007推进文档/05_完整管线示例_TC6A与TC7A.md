@@ -20,6 +20,11 @@
 >   4  结算对模型实际提交的 steps 跑影子，结果对即过（steps_ok 只记一致性）；
 >      due_conditions 的 eq 比 value、ge/le 与 T1~T5 同口径（比 s0 初值严格变向）
 >   5  C-2 对 TC6 = settle_ok（影子结算），不再看 final_state
+> 设备变更（2026-10-12 补记）：新增空气净化器 air_purifier（id_token=purifier，
+> device_id 形如 device_bedroom_purifier），只有 turn_on / turn_off 两个动作，
+> 没有 mode / level / target；TC6 / TC7 场景通用（如"花粉过敏 → 开净化器"），
+> 本文 §0 的示例家与 §3 TC7A 全程用它；老设备集与老数据不动。
+> 待落地：D0_devices.jsonl 加行、B_schema 白名单、D1 挂载、A_policy 设备常识（见 §5 第 4 条）。
 
 ## 0 一屏
 
