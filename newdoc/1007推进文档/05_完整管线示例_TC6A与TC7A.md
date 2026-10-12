@@ -23,6 +23,8 @@
 >      新增 C-5 下单；编号到 C-5 为止
 >   6  TC6A 不做大模型复判（2026-10-12 定）：规则已钉死（C-1~C-5 全规则判定），
 >      d6="跳过"、不发请求；summary 语义不在管线内校验
+>   7  TC7A 也不做大模型复判（2026-10-12 定）：read_ok 改为 C-5 规则标签；
+>      遵守性由 C-2 承担；summary 不校验；D6_TC7A 模板删除
 > 设备变更（2026-10-12 记）：计划新增空气净化器 air_purifier（id_token=purifier，
 > device_id 形如 device_bedroom_purifier），只有 turn_on / turn_off 两个动作，
 > state 只有 {on}，没有 mode / level / target；用于 TC6 / TC7 场景（如"花粉过敏 → 开净化器"）。
@@ -50,7 +52,7 @@
         ↓
   D5 跑轨迹（A 提示词 = 老 A_policy + TC 附加段；C 收集 turns 并打 C-1~C-4）
         ↓
-  D6 复核（TC6A：不做大模型复判，直接跳过；TC7A 走 D6 语义复核）
+  D6 复核（TC6A / TC7A 都不做大模型复判 → 直接跳过；老五类里只有 T3/T4/T5 走三票）
         ↓
 TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category / d6 / d6_votes）
 ```
@@ -521,7 +523,7 @@ TC6A 不进 D6 语义复核——让大模型审这条轨迹没有意义：
 该行直接记 d6="跳过"、d6_votes=[]，不发任何模型请求；
 summary 的语义也不在管线内校验（C-4 只看 outcome / reason_code / facts）。
 
-（对照：T3/T4/T5 与 TC7 才进 D6 三票；T1/T2 同样跳过。）
+（对照：老五类里只有 T3/T4/T5 进 D6 三票；T1/T2 与 TC7 同样跳过。）
 ```
 
 ### 2.10 进数据集
@@ -913,57 +915,44 @@ record 里新增可选块（仅 TC 任务）：
 
 ```text
 交互一结束（同一次 C.run 调用内），C 自动打标签（不调模型）：
-  ① 打 C 标签（C-1~C-4）
+  ① 打 C 标签（C-1~C-5）
      C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具
      C-2 终态     （即时终态分支）final_state 满足 instant_conditions 且满足 keep（空数组过）；
                   eq 比 value；ge/le 比 s0 初值严格变向
      C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
      C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                   allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
+     C-5 记忆使用   轨迹里存在一次成功的 memory.read（read_ok）→ 规则判定，不调模型
+                  （本期只判"读过"；读与做的先后顺序暂不检查）
+  ② 遵守性与 summary
+     遵守性 = C-2（instant_conditions 达成即"按记忆做对了"）；
+     本期示例 forbidden_actions 为空；日后禁令型记忆落地时，forbidden 需结构化、在此加规则检查；
+     summary 语义不在管线内校验。
   （TC7A 动作在 episode 里真执行，判定看 final_state；没有 TC6 那种定时终态影子）
 ```
 
-### 3.9 D0 模板：D6_TC7A.md（语义复核提示词全文）
+### 3.9 D6（TC7A：不做大模型复判 → 跳过）
 
 ```text
-功能
-复核 TC7A 轨迹：记忆读到没有、约束遵守没有、summary 是否与事实一致。
-只看工具调用、记忆快照与状态变化，不采信 summary 自述。
+TC7A 不进 D6 语义复核——和 TC6A 同理，让大模型审这条轨迹没有必要：
+  · 读没读记忆 → C-5 记忆使用（read_ok）：规则直接判（轨迹里有成功的 memory.read）
+  · 做得对不对 → C-2（即时终态）：instant_conditions + keep 全达成
+  · 禁止项     → 本期示例 forbidden_actions 为空；日后禁令型落地改成结构化规则检查
+  · summary    → 不在管线内校验（C-4 只看 outcome / reason_code / facts）
+该行直接记 d6="跳过"、d6_votes=[]，不发任何模型请求。
 
-输入
-  task：base_task.instant_conditions / memory_task.memory_initial / forbidden_actions
-  轨迹：turns + 工具调用 + state_diff + memory 快照 + finish summary
-
-输出
-  {"read_ok": true/false, "comply_ok": true/false, "summary_ok": true/false, "reason": "..."}
-
-判定规则
-  read_ok     轨迹里有成功的 memory.read（required_calls 待审；未采用时以轨迹为准）
-  comply_ok   禁止动作没出现，base_task.instant_conditions 全部达成
-  summary_ok  summary 与实际动作/状态一致，没有编造，没有自述奖励
-
-注意：正面约束统一在 base_task.instant_conditions；required_effects 已删除。
-
-判例
-  读了记忆 + 把空调开到 25.5 度制冷 + summary 如实 → 三个 true
-  没读记忆 + 碰巧也开对 → read_ok=false，其余 true
-  读了记忆 + 只开机没调温度（instant_conditions 没达成）→ comply_ok=false
-  summary 说"已关闭空调"但轨迹没有 → summary_ok=false
+（原 D6_TC7A.md 语义复核模板不再需要，从模板清单里删除；
+  需要语义复核的老类别只剩 T3/T4/T5。）
 ```
 
-### 3.10 D6 读标签与进数据集（TC7A；按时间顺序）
+### 3.10 判定与进数据集（TC7A；按时间顺序）
 
 ```text
-D6 不重判 C 标签，只做三步：
+TC7A 全程零大模型复判：
 
-① 读标签（单独一步）：本行 C-1~C-4 全 true 才继续（TC7 没有 C-5；C-2 只走"即时终态"分支）；
-   否则原样返回，不发起复核
-② 三票复核（D6_TC7A，模板见 3.9；role=external，三次互相独立）
-   产出 read_ok / comply_ok / summary_ok + d6 / d6_votes；
-   只写回这些，C-1~C-4 不动
-③ 进集：d6="对"（三票多数决）→ 复制进数据集
-
-C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
+① C 在 3.8 交互结束时打完标签：C-1~C-5（C-5 = 记忆使用 read_ok，规则判定）
+② D6 跳过：d6="跳过"、d6_votes=[]，不发请求（同 TC6A；老五类里只有 T3/T4/T5 走三票）
+③ 进集：C-1~C-5 全 true 且 d6="跳过" → 复制进数据集
 ```
 
 ```json
@@ -995,11 +984,10 @@ C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
               "session_turns": 0}
   },
   "record": {"...": "见 3.8 的 record"},
-  "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
-             "read_ok": true, "comply_ok": true, "summary_ok": true},
+  "labels": {"C-1": true, "C-2": true, "C-3": true, "C-4": true, "C-5": true},
   "category": "TC7A",
-  "d6": "对",
-  "d6_votes": ["对", "对", "对"]
+  "d6": "跳过",
+  "d6_votes": []
 }
 ```
 
@@ -1018,8 +1006,8 @@ C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
   TC7A_task.md          出题提示词（3.1）
   D0_request_TC7A.md    写用户话提示词（3.3）
   D3_review_TC7A.md     审查提示词（3.5）
-  D6_TC7A.md            语义复核提示词（3.9）
   A_policy_tc_sections.md  A 提示词附加段（时间调度 + 记忆）
+  （原 D6_TC7A.md 语义复核模板已删：TC7A 不做大模型复判）
 
 代码 new_demo/data_tc/
   TC0_template.py / TC2_task_writer.py / TC2_request_writer.py /
@@ -1033,11 +1021,12 @@ C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
 ## 5 待确认点
 
 ```text
-1  required_calls 是否采用（TC7A 的 read_ok、TC7C 第2轮的"必须读过记忆"依赖它；
-   不采用的话，读记忆只能从轨迹里人工/事后判断）
+1  required_calls 是否采用（TC7A 的 read_ok 已改为 C-5 规则标签，不再依赖它；
+   TC7C 第2轮的"必须读过记忆"可复用同一套规则扫描；是否还需要任务侧字段待定）
 2  三块结构与空块约定：base_task 必有且 intent / expected_finish 非空；
    time_task / memory_task 可为 {}——已按此执行，确认即可
-3  TC7A 的 forbidden_actions 数据结构（现在例子是字符串列表）
+3  TC7A 的 forbidden_actions 数据结构（现在例子是字符串列表；
+   日后禁令型记忆要用规则检查，需要结构化）
 4  空气净化器落地（设备目录 + B_schema + A 提示词设备常识）
 5  轮数上限 12 的代码改动（B_models / B_schema / D4 / D5 / A_policy / 评测 runner）
 6  蓝图是否新增 persona_id（TC7A 的 memory_initial 依赖画像，现有蓝图不存画像）
@@ -1063,4 +1052,6 @@ C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
    禁令型 / 习惯型示例未覆盖，后续按需补
 17 TC6A 不做 D6 大模型复判（2026-10-12 定）：C-1~C-5 全规则判定，d6="跳过"、不发请求；
    summary 语义不在管线内校验（要防失实摘要，放 SFT 数据侧抽查）
+18 TC7A 也不做大模型复判（2026-10-12 定）：C-5 记忆使用（read_ok）改规则判定；
+   遵守性由 C-2 承担；summary 不校验；D6_TC7A.md 模板删除
 ```
