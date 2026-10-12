@@ -14,8 +14,9 @@
 >   1  base_task.conditions 更名 instant_conditions（即时条件；TC6 固定为空数组）；
 >      time_task 新增 due_conditions（到点条件，影子结算的判定对象）
 >   2  due_state 删除：不再有"到点状态快照"，到点判定直接看 due_conditions
->   3  影子起点：D4 用出题时的 s0；结算用"新的 s0"= episode 结束时的世界
->      （当前时刻执行完的结果；静止时间下就是到点时的世界）
+>   3  影子起点：D4 = 出题时的 s0（同一副本先本地试答、再影子试答，顺序叠加）；
+>      结算 = "新的 s0" = episode 结束时的世界（当前时刻执行完的结果；
+>      静止时间下就是到点时的世界）
 >   4  结算对模型实际提交的 steps 跑影子，结果对即过（steps_ok 只记一致性）；
 >      due_conditions 的 eq 比 value、ge/le 与 T1~T5 同口径（比 s0 初值严格变向）
 >   5  C-2 对 TC6 = settle_ok（影子结算），不再看 final_state
@@ -362,21 +363,29 @@ user_request：{{user_request}}
 结论：进入 D4
 ```
 
-### 2.7 D4 Oracle（不调模型）
+### 2.7 D4 Oracle（不调模型：两段试答，与 T1~T5 同构）
 
 ```text
 输入      task + s0 + base_time
-步骤
-  1  静态检查：due_steps 里的 device_id / action / params 在 s0 中合法；
-     due_conditions 引用的设备与字段在 s0 中存在
-  2  时间检查：at_time_expected 晚于 base_time 且 ≤ base_time + 10080 分钟
-  3  影子执行：copy s0（出题时的世界）→ 应用 due_steps → 得到"如果到点执行后的状态"
-  4  结果比对：影子状态满足 due_conditions（TC6 的判定真值；instant_conditions
-     固定为空，不参与）
+结构      一份副本、顺序两段，两段都可以为空（沿用老 D4 的 _check_writes，前后叠加）
+  阶段 A 本地试答（老 D4 原样）：instant_conditions 逐条反推写动作，在副本上顺序打，
+         必须被 B 接受
+         · T1~T5 = 只有这一段；TC6A/B 的 instant_conditions 固定为空 → 空过
+         · TC7A/B 走这一段（当下动作的可行性）
+  阶段 B 影子试答（接在阶段 A 之后、同一份副本上）：due_conditions 逐条反推写动作，
+         继续顺序试打，必须被 B 接受
+         · 语义 = "本地该做的做完之后，到点还能不能达成"；两段状态顺序叠加
+         · TC6A/B 走这一段（instant 为空 → 阶段 B 直接从 s0 起）
+         · 不执行 due_steps 序列；自洽性不在此拦（数据集准入由轨迹端把关）
+  另外     静态检查：due_steps 与 due_conditions 引用的 device_id / field / action / params
+           在 s0 中合法（due_steps 只做字面体检——写话素材、steps_ok 参考）
+           时间检查：at_time_expected 晚于 base_time 且 ≤ base_time + 10080 分钟
+  对齐说明 与结算链同构：episode 改变世界 → 结算在新 s0 上判 due_conditions；
+           D4 换成"本地试答改变副本 → 影子试答判 due_conditions"，两段一一对应
 输出
   {"oracle_ok": true,
    "shadow_state_diff": {"device_living_light": {"on": {"from": true, "to": false}}},
-   "reason": "at 合法、steps 合法、影子执行满足 due_conditions"}
+   "reason": "at 合法、本地/到点两段试答通过"}
 ```
 
 ### 2.8 D5 跑轨迹（A 提示词 + 轨迹）
@@ -691,8 +700,9 @@ user_request：{{user_request}}
 步骤
   1  一致性：memory_initial 提到的设备/能力必须在 s0 里存在
   2  可行性：base_task.instant_conditions 对应的动作在 s0 中合法
-  3  影子预演：copy s0 → 打开净化器 → 检查 base_task.instant_conditions 满足
-     （只是生成侧可行性预演；TC7A 动作在 episode 里真执行，没有 TC6 那种结算影子）
+  3  本地试答（老 D4 同一套）：copy s0 → instant_conditions 反推写动作（开净化器）
+     → 在副本上试打，必须被 B 接受
+     （TC7A 没有阶段 B：没有 due_conditions；动作在 episode 里真执行，无结算影子）
 输出
   {"oracle_ok": true, "shadow_state_diff":
    {"device_bedroom_purifier": {"on": {"from": false, "to": true}}},
