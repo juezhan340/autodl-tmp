@@ -187,22 +187,6 @@ TC 的 A 提示词 = 老 A_policy.md + TC 附加段
   TC7A 附加段：记忆规则（见 3.8）
 ```
 
-### 1.4 C 标签口径（C-1~C-4，两类共用；沿用现有 evaluator）
-
-```text
-评估器跑完 episode 后打四个程序标签（不调模型）；TC 只改 C-2 的 TC6 分支：
-
-C-1 协议     finish_requested 且未 truncated 且没有一轮多工具（TOO_MANY_TOOL_CALLS）
-C-2 终态     TC6  ：= settle_ok（影子结算结果满足 due_conditions），不看 final_state
-             TC7  ：instant_conditions 全过且 keep 全过（空数组过）
-             口径：eq 比 value；ge/le 比 s0 初值严格变高/变低（keep 只 eq）
-C-3 观察     required_observations 都有成功 inspect（空数组过；TC 本期基本为空）
-C-4 finish   outcome 与 expected_finish 对齐；refused 的 reason_code 必须落在
-             allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
-
-进集条件另有增量键：见 2.10（TC6）、3.10（TC7）与 §5 待确认 14。
-```
-
 ## 2 TC6A 完整管线
 
 ### 2.1 D0 模板：TC6A_task.md（出题提示词全文）
@@ -489,11 +473,15 @@ record 里新增可选块（仅 TC 任务）：
    比对 = 影子终态满足 due_conditions：
           eq 比 value；ge/le 与 T1~T5 同口径，比 s0 初值严格变向
    → settle_ok（掉线本期不处理）
-标签
+C 标签（TC6；评估器在 episode 结束后打，不调模型）
+  C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具（TOO_MANY_TOOL_CALLS）
+  C-2 终态     = settle_ok（见上②）：影子执行后终态满足 due_conditions；不读 final_state
+  C-3 观察     required_observations 都有成功 inspect（空数组过；TC6A 固定为空 → 恒过）
+  C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
+               expected_finish.allowed_reason_codes 里；出现 facts 失败；
+               completed 带 reason_code 失败
   {"C-1": true, "C-2": true, "C-3": true, "C-4": true,
    "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
-  · C-1/C-3/C-4 沿用现有口径（协议 / 观察 / finish 契约；定义见 1.4）
-  · C-2 对 TC6 = settle_ok（影子结算结果），不再看 final_state
   · place_ok / steps_ok / settle_ok / time_error 是 TC6 新增键；
     time_error = 该写单却直接 execute_action（终态碰巧满足也算错）
 D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
@@ -537,7 +525,7 @@ D6   TC6A 规则可验证 → d6 = "跳过"，d6_votes = []
 ```
 
 D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同。
-TC6 进集口径（2026-10-11 定，结果导向；C-1~C-4 定义见 1.4）：C-1 / C-3 / C-4 全 true，
+TC6 进集口径（2026-10-11 定，结果导向；C-1~C-4 定义见 2.9）：C-1 / C-3 / C-4 全 true，
 C-2（= settle_ok）与 place_ok 为 true，time_error = false；
 steps_ok 仅记录、不单独卡进集（是否更严见 §5 待确认）。
 
@@ -830,6 +818,17 @@ record 里新增可选块（仅 TC 任务）：
 
 ### 3.10 D6 输出与进数据集
 
+```text
+C 标签（TC7；评估器在 episode 结束后打，不调模型）
+  C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具
+  C-2 终态     final_state 满足 instant_conditions 且满足 keep（空数组过）；
+               eq 比 value；ge/le 比 s0 初值严格变向
+  C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
+  C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
+               allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
+  另有 D6 语义复核三标签：read_ok / comply_ok / summary_ok（模板见 3.9）
+```
+
 ```json
 {
   "scenario": {
@@ -866,7 +865,7 @@ record 里新增可选块（仅 TC 任务）：
 ```text
 说明：蓝图里 memory_initial 在 task.memory_task；D5 组装 scenario 时
 移动到 world.memory_initial（上面已是搬运后的运行时视图）。
-C-1~C-4 的定义见 1.4；TC7 的进集判定走 d6（三票复核结果）。
+TC7 的进集判定走 d6="对"（三票多数决产生）。
 ```
 
 ## 4 两条管线的涉及文件清单
