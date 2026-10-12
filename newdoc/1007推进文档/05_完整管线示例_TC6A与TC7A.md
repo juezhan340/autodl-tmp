@@ -394,7 +394,7 @@ user_request：{{user_request}}
    "reason": "at 合法、本地/到点两段试答通过"}
 ```
 
-### 2.8 D5 跑轨迹（A 提示词 + 轨迹）
+### 2.8 C 与 A 交互（D5 跑轨迹；结束时 C 自动打标签）
 
 ```text
 A 提示词 = 老 A_policy.md + TC6A 附加段（时间调度）
@@ -407,6 +407,14 @@ TC6A 附加段内容
   5  过去时间 / 超过 7 天 / 模糊时间 → 说明原因后 refused（reason_code 按契约）
   6  不要自己执行这些动作（现在不做，只写单）
   7  全部 8 个工具都能用；无关工具不要乱调
+```
+
+```text
+交互循环（C 调度 A 与 B；一次 C.run 完成一局）
+  每轮 C 把 context（observation / tools / history / 协议反馈 / 轮次号）交给 A
+  A 输出一个工具调用或 finish；家庭工具走 B.step；finish 由 C 收下并结束
+  一轮最多 1 个工具；解析失败记 INVALID_ASSISTANT_RESPONSE（消耗一轮）
+  跑满 12 轮未 finish → truncated
 ```
 
 ```text
@@ -455,45 +463,44 @@ record 里新增可选块（仅 TC 任务）：
               "shadow_result": {"device_living_light": {"on": {"from": true, "to": false}}}}}
 
 注意：final_state 里客厅灯仍是 on=true——静止时间下预约不真正执行；
-"到点会不会变成 false"由结算阶段的影子执行判定（见 2.9）。
+"到点会不会变成 false"由交互结束时的结算判定（见下）算。
 结算影子的起点 = 新的 s0，即本 episode 结束时的世界（当前时刻执行完的结果；
 静止时间下这就是"到点时的世界"），不是出题时的旧 s0。
+
+交互一结束（同一次 C.run 调用内），C 自动打标签（不调模型）：
+  ① 下单判定
+     at 与 at_time_expected 分钟级相等          → place_ok
+     steps 与 due_steps 一致（设备/动作/参数）    → steps_ok（只记一致性，不挡结算分）
+     预约单建立（schedule_id 存在）              → 下单成立
+  ② 结算判定（影子执行）
+     起点 = 新的 s0（episode 结束时的世界 = 当前时刻执行完的结果）
+     步骤 = 模型实际提交的 steps（不换成 due_steps；结果对就可以）
+     比对 = 影子终态满足 due_conditions：eq 比 value；ge/le 比 s0 初值严格变向
+     → settle_ok（掉线本期不处理）
+  ③ 打 C 标签（C-1~C-4；TC6 的 C-2 就是 ② 的 settle_ok）
+     C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具（TOO_MANY_TOOL_CALLS）
+     C-2 终态     = settle_ok（见②）：影子执行后终态满足 due_conditions；不读 final_state
+     C-3 观察     required_observations 都有成功 inspect（空数组过；TC6A 固定为空 → 恒过）
+     C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
+                  expected_finish.allowed_reason_codes 里；出现 facts 失败；
+                  completed 带 reason_code 失败
+     同行落盘：{"C-1": true, "C-2": true, "C-3": true, "C-4": true,
+                "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
+     （place_ok / steps_ok / settle_ok / time_error 是 TC6 新增键；
+       time_error = 该写单却直接 execute_action，终态碰巧满足也算错）
 ```
 
-### 2.9 判定分步（TC6A；按时间顺序）
+### 2.9 D6 读标签（TC6A：规则可验证 → 跳过）
 
 ```text
-—— 第一段 D5 内（episode 一结束，C 的 evaluator 打，不调模型）——
-① 下单判定
-   at 与 at_time_expected 分钟级相等          → place_ok
-   steps 与 due_steps 一致（设备/动作/参数）    → steps_ok（只记一致性，不挡结算分）
-   预约单建立（schedule_id 存在）              → 下单成立
-② 结算判定（影子执行）
-   起点 = 新的 s0（episode 结束时的世界 = 当前时刻执行完的结果）
-   步骤 = 模型实际提交的 steps（不换成 due_steps；结果对就可以）
-   比对 = 影子终态满足 due_conditions：
-          eq 比 value；ge/le 与 T1~T5 同口径，比 s0 初值严格变向
-   → settle_ok（掉线本期不处理）
-③ 打 C 标签（C-1~C-4；TC6 的 C-2 就是 ② 的 settle_ok）
-   C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具（TOO_MANY_TOOL_CALLS）
-   C-2 终态     = settle_ok（见上②）：影子执行后终态满足 due_conditions；不读 final_state
-   C-3 观察     required_observations 都有成功 inspect（空数组过；TC6A 固定为空 → 恒过）
-   C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
-                expected_finish.allowed_reason_codes 里；出现 facts 失败；
-                completed 带 reason_code 失败
-   同行落盘：{"C-1": true, "C-2": true, "C-3": true, "C-4": true,
-              "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
-   （place_ok / steps_ok / settle_ok / time_error 是 TC6 新增键；
-     time_error = 该写单却直接 execute_action，终态碰巧满足也算错）
+D6 不重判、不算标签，只做两步：
 
-—— 第二段 D6（只读，不重判）——
-④ 读标签（单独一步）：把本行 C-1~C-4 读出来当门槛；
-   四项不全 true → 原样返回，不做任何语义复核
-⑤ 类别分流：TC6A 规则可验证 → d6="跳过"，d6_votes=[]，不发请求
+① 读标签（单独一步）：把本行的 C-1~C-4 读出来当门槛；
+   四项不全 true → 原样返回，不发起任何语义复核
+② 处理：TC6A 规则可验证 → d6="跳过"，d6_votes=[]，不发请求
    （对照：TC7 在 3.10 走三票；T1/T2 同样在这里跳过）
 
-—— 第三段 进集（读 labels 与 d6）——
-⑥ 见 2.10：C-1~C-4 全 true + place_ok + time_error=false 且 d6 ∈ {对, 跳过} → 复制
+D6 只写 d6 / d6_votes；C-1~C-4 来自 2.8 交互结束时 C 自己打的标签，D6 只读不产。
 ```
 
 ### 2.10 进数据集
@@ -534,7 +541,7 @@ record 里新增可选块（仅 TC 任务）：
 ```
 
 D_dataset.jsonl 的行结构与 D5_trajectories.jsonl 相同。
-TC6 进集口径（2026-10-11 定，结果导向；C-1~C-4 定义见 2.9）：C-1 / C-3 / C-4 全 true，
+TC6 进集口径（2026-10-11 定，结果导向；C-1~C-4 定义见 2.8）：C-1 / C-3 / C-4 全 true，
 C-2（= settle_ok）与 place_ok 为 true，time_error = false；
 steps_ok 仅记录、不单独卡进集（是否更严见 §5 待确认）。
 
@@ -728,7 +735,7 @@ user_request：{{user_request}}
    "reason": "记忆与 s0 一致；按记忆行动可达成 base_task.instant_conditions"}
 ```
 
-### 3.8 D5 跑轨迹（A 提示词 + 轨迹）
+### 3.8 C 与 A 交互（D5 跑轨迹；结束时 C 自动打标签）
 
 ```text
 A 提示词 = 老 A_policy.md + TC7A 附加段（记忆）
@@ -739,6 +746,14 @@ TC7A 附加段内容
   3  memory 是整段文本，读了直接用，不要改写
   4  行为完成后 finish completed，summary 如实说明做了什么、为什么
   5  全部 8 个工具都能用；无关工具不要乱调
+```
+
+```text
+交互循环（C 调度 A 与 B；一次 C.run 完成一局）
+  每轮 C 把 context（observation / tools / history / 协议反馈 / 轮次号）交给 A
+  A 输出一个工具调用或 finish；家庭工具走 B.step；finish 由 C 收下并结束
+  一轮最多 1 个工具；解析失败记 INVALID_ASSISTANT_RESPONSE（消耗一轮）
+  跑满 12 轮未 finish → truncated
 ```
 
 ```text
@@ -797,6 +812,18 @@ record 里新增可选块（仅 TC 任务）：
               "schedules": []}}
 ```
 
+```text
+交互一结束（同一次 C.run 调用内），C 自动打标签（不调模型）：
+  ① 打 C 标签（C-1~C-4）
+     C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具
+     C-2 终态     final_state 满足 instant_conditions 且满足 keep（空数组过）；
+                  eq 比 value；ge/le 比 s0 初值严格变向
+     C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
+     C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
+                  allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
+  （TC7A 动作在 episode 里真执行，判定看 final_state；没有 TC6 那种结算影子）
+```
+
 ### 3.9 D0 模板：D6_TC7A.md（语义复核提示词全文）
 
 ```text
@@ -825,26 +852,18 @@ record 里新增可选块（仅 TC 任务）：
   summary 说"已关闭空调"但轨迹没有 → summary_ok=false
 ```
 
-### 3.10 判定分步与进数据集（TC7A；按时间顺序）
+### 3.10 D6 读标签与进数据集（TC7A；按时间顺序）
 
 ```text
-—— 第一段 D5 内（episode 一结束，C 的 evaluator 打，不调模型）——
-① 打 C 标签（C-1~C-4）
-   C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具
-   C-2 终态     final_state 满足 instant_conditions 且满足 keep（空数组过）；
-                eq 比 value；ge/le 比 s0 初值严格变向
-   C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
-   C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
-                allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
+D6 不重判 C 标签，只做三步：
 
-—— 第二段 D6（先读标签，再语义复核）——
-② 读标签（单独一步）：本行 C-1~C-4 全 true 才继续；否则原样返回，不发起复核
-③ 三票复核（D6_TC7A，模板见 3.9；role=external，三次互相独立）
+① 读标签（单独一步）：本行 C-1~C-4 全 true 才继续；否则原样返回，不发起复核
+② 三票复核（D6_TC7A，模板见 3.9；role=external，三次互相独立）
    产出 read_ok / comply_ok / summary_ok + d6 / d6_votes；
    只写回这些，C-1~C-4 不动
+③ 进集：d6="对"（三票多数决）→ 复制进数据集
 
-—— 第三段 进集 ——
-④ d6="对"（三票多数决）→ 复制进数据集
+C-1~C-4 由 3.8 交互结束时 C 自己打，D6 只读不产。
 ```
 
 ```json
