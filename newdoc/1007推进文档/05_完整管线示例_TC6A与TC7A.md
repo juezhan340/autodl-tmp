@@ -418,19 +418,23 @@ TC6A 附加段内容
 ```
 
 ```text
-D5 落盘的 record（对齐现有 EpisodeRun.record：scenario_id / turns / final_state /
-finish / protocol；每个 turn 含 observation_before / tool_calls / events / observation_after）
+D5 落盘的 record（与现有批次 quota50 / quota200 同构：scenario_id / turns / final_state /
+finish / protocol；每个 turn 含 turn / observation_before / tool_calls / events / observation_after。
+observation = B 的观测视图 {scenario_id, user_request, tools, last_tool_result}，落盘时已展开；
+observation_after 与下一轮 observation_before 同值；TC 增量只有 record.tc_trace）
 
 {
   "scenario_id": "sc_TC6A_0001",
   "turns": [
     {"turn": 1,
-     "observation_before": {完整 A 上下文：user_request + 工具表 + 历史},
+     "observation_before": {B 的观测视图：scenario_id / user_request / tools / last_tool_result},
      "tool_calls": [{"name": "inspect_time", "arguments": {}, "call_id": "turn_1_0"}],
-     "events": [{"call_id": "turn_1_0", "tool_name": "inspect_time",
+     "events": [{"call_id": "turn_1_0", "tool_name": "inspect_time", "arguments": {},
                  "result": {"ok": true,
-                            "data": {"now": "2026-10-10 09:30", "clock": "virtual"}}}],
-     "observation_after": {同上，追加本次工具结果}},
+                            "data": {"now": "2026-10-10 09:30", "clock": "virtual"},
+                            "error": null},
+                 "state_diff": {}}],
+     "observation_after": {同上；last_tool_result 更新为本轮结果}},
     {"turn": 2,
      "tool_calls": [{"name": "time_control",
                      "arguments": {"op": "schedule", "at": "2026-10-10 22:00",
@@ -438,16 +442,28 @@ finish / protocol；每个 turn 含 observation_before / tool_calls / events / o
                                               "action": "turn_off", "params": {}}]},
                      "call_id": "turn_2_0"}],
      "events": [{"call_id": "turn_2_0", "tool_name": "time_control",
+                 "arguments": {"op": "schedule", "at": "2026-10-10 22:00",
+                               "steps": [{"device_id": "device_living_light",
+                                          "action": "turn_off", "params": {}}]},
                  "result": {"ok": true,
                             "data": {"schedule_id": "sch_01",
-                                     "at": "2026-10-10 22:00", "status": "pending"}}}],
+                                     "at": "2026-10-10 22:00", "status": "pending"},
+                            "error": null},
+                 "state_diff": {}}],
      "observation_after": {同上}},
     {"turn": 3,
      "tool_calls": [{"name": "finish",
                      "arguments": {"outcome": "completed",
                                    "summary": "今晚10点关掉客厅灯，已经预约。"},
                      "call_id": "turn_3_0"}],
-     "events": [],
+     "events": [{"call_id": "turn_3_0", "tool_name": "finish",
+                 "arguments": {"outcome": "completed",
+                               "summary": "今晚10点关掉客厅灯，已经预约。"},
+                 "result": {"ok": true,
+                            "data": {"outcome": "completed",
+                                     "summary": "今晚10点关掉客厅灯，已经预约。"},
+                            "error": null},
+                 "state_diff": {}}],
      "observation_after": {同上}}
   ],
   "final_state": {"device_living_light": {"on": true, "mode": "bright"},
@@ -757,26 +773,37 @@ TC7A 附加段内容
 ```
 
 ```text
-D5 落盘的 record（与现有结构同构）
+D5 落盘的 record（与现有批次同构；observation = B 的观测视图，落盘时已展开；
+observation_after 与下一轮 observation_before 同值；TC 增量只有 record.tc_trace）
 
 {
   "scenario_id": "sc_TC7A_0001",
   "turns": [
     {"turn": 1,
-     "observation_before": {完整 A 上下文：user_request + 工具表 + 历史},
+     "observation_before": {B 的观测视图：scenario_id / user_request / tools / last_tool_result},
      "tool_calls": [{"name": "memory", "arguments": {"op": "read"},
                      "call_id": "turn_1_0"}],
      "events": [{"call_id": "turn_1_0", "tool_name": "memory",
+                 "arguments": {"op": "read"},
                  "result": {"ok": true,
-                             "data": {"text": "用户对花粉过敏，别开窗；闷了先开空调"}}}],
-     "observation_after": {同上，追加记忆文本}},
+                            "data": {"text": "用户对花粉过敏，别开窗；闷了先开空调"},
+                            "error": null},
+                 "state_diff": {}}],
+     "observation_after": {同上；last_tool_result 更新为记忆文本}},
     {"turn": 2,
      "tool_calls": [{"name": "inspect_device",
                      "arguments": {"device_id": "device_bedroom_climate"},
                      "call_id": "turn_2_0"}],
      "events": [{"call_id": "turn_2_0", "tool_name": "inspect_device",
+                 "arguments": {"device_id": "device_bedroom_climate"},
                  "result": {"ok": true,
-                            "data": {"state": {"on": false}, "actions": ["...turn_on..."]}}}],
+                            "data": {"device": {"device_id": "device_bedroom_climate",
+                                                "display_name": "卧室空调", "kind": "actuator",
+                                                "device_type": "climate",
+                                                "state": {"on": false, "mode": "cool", "target": 26.0},
+                                                "actions": ["..."]}},
+                            "error": null},
+                 "state_diff": {}}],
      "observation_after": {同上}},
     {"turn": 3,
      "tool_calls": [{"name": "execute_action",
@@ -784,17 +811,29 @@ D5 落盘的 record（与现有结构同构）
                                    "action": "turn_on", "params": {}},
                      "call_id": "turn_3_0"}],
      "events": [{"call_id": "turn_3_0", "tool_name": "execute_action",
+                 "arguments": {"device_id": "device_bedroom_climate",
+                               "action": "turn_on", "params": {}},
                  "result": {"ok": true,
-                            "data": {"state_after": {"on": true},
-                                     "state_diff": {"on": {"from": false, "to": true}},
-                                     "verified": true}}}],
+                            "data": {"device_id": "device_bedroom_climate",
+                                     "action": "turn_on",
+                                     "state_after": {"on": true, "mode": "cool", "target": 26.0},
+                                     "verified": true, "changed": true},
+                            "error": null},
+                 "state_diff": {"on": {"from": false, "to": true}}}],
      "observation_after": {同上}},
     {"turn": 4,
      "tool_calls": [{"name": "finish",
                      "arguments": {"outcome": "completed",
                                    "summary": "卧室闷，按您的习惯开了空调，没有开窗。"},
                      "call_id": "turn_4_0"}],
-     "events": [],
+     "events": [{"call_id": "turn_4_0", "tool_name": "finish",
+                 "arguments": {"outcome": "completed",
+                               "summary": "卧室闷，按您的习惯开了空调，没有开窗。"},
+                 "result": {"ok": true,
+                            "data": {"outcome": "completed",
+                                     "summary": "卧室闷，按您的习惯开了空调，没有开窗。"},
+                            "error": null},
+                 "state_diff": {}}],
      "observation_after": {同上}}
   ],
   "final_state": {"device_bedroom_climate": {"on": true},
