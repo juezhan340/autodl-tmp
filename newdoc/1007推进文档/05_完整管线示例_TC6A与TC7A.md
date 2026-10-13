@@ -950,10 +950,14 @@ record 里新增可选块（仅 TC 任务）：
      C-5 记忆使用（本任务独有分支）  = required_calls 里记忆条目的检查结果（本示例 memory.read），
                   与 C-3 同一份数据、单独汇报（本期只判"读过"；读与做的先后顺序暂不检查）
                   · 注：C-5 按任务族取分支——TC7 = 记忆使用检查；TC6 的 C-5 = 预约单（见 2.8）
-  ② 遵守性与 summary
-     遵守性 = C-2（instant_conditions 达成即"按记忆做对了"）；
-     本期示例 forbidden_actions 为空；日后禁令型记忆落地时，forbidden 需结构化、在此加规则检查；
-     summary 语义不在管线内校验。
+  ② 原 D6 三语义标签的归属（说明，不是新增检查）
+     read_ok（读没读记忆）   → 转成 base_task.required_calls 的 {"tool":"memory","op":"read"}；
+                              C-3 做通用检查、C-5 做记忆切片汇报
+     comply_ok（守没守约束） → 并入 C-2：instant_conditions + keep 达成即视为守约；
+                              本期示例 forbidden_actions 为空；日后禁令型记忆落地时，
+                              forbidden 需结构化，并在 TC7 判定里加规则检查（标签届时定）
+     summary_ok（摘要如实）  → 不在管线内校验（C-4 只看 outcome / reason_code / facts）；
+                              要防失实摘要，放 SFT 数据侧抽查
   （TC7A 动作在 episode 里真执行，判定看 final_state；没有 TC6 那种定时终态影子）
 ```
 
