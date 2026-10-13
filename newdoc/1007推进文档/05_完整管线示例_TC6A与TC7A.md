@@ -916,9 +916,12 @@ record 里新增可选块（仅 TC 任务）：
 ```text
 交互一结束（同一次 C.run 调用内），C 自动打标签（不调模型）：
   ① 打 C 标签（C-1~C-5）
-     C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具
-     C-2 终态     （即时终态分支）final_state 满足 instant_conditions 且满足 keep（空数组过）；
-                  eq 比 value；ge/le 比 s0 初值严格变向
+     C-1 协议     finish_requested 为真 且 未 truncated 且 没有一轮多工具（TOO_MANY_TOOL_CALLS）
+     C-2 终态     两个分支，共用同一套条件检查器（和 TC6 同一套定义）：
+                  · 即时终态：final_state 满足 instant_conditions + keep（空数组过）；
+                    eq 比 value；ge/le 比 s0 初值严格变向 —— TC7A 走这一支
+                  · 定时终态：影子执行（新的 s0 + 模型 steps）终态满足 due_conditions
+                    —— TC7A 不用（time_task 为空、没有 due_conditions）
      C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
      C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                   allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
@@ -936,7 +939,7 @@ record 里新增可选块（仅 TC 任务）：
 ```text
 TC7A 不进 D6 语义复核——和 TC6A 同理，让大模型审这条轨迹没有必要：
   · 读没读记忆 → C-5 记忆使用（read_ok）：规则直接判（轨迹里有成功的 memory.read）
-  · 做得对不对 → C-2（即时终态）：instant_conditions + keep 全达成
+  · 做得对不对 → C-2 的即时终态分支：instant_conditions + keep 全达成
   · 禁止项     → 本期示例 forbidden_actions 为空；日后禁令型落地改成结构化规则检查
   · summary    → 不在管线内校验（C-4 只看 outcome / reason_code / facts）
 该行直接记 d6="跳过"、d6_votes=[]，不发任何模型请求。
