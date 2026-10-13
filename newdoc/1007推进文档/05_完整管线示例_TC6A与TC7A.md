@@ -504,9 +504,10 @@ C-3 观察        required_observations 都有成功 inspect（空数组过；TC
 C-4 finish      outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                 expected_finish.allowed_reason_codes 里；出现 facts 失败；
                 completed 带 reason_code 失败
-C-5 下单（新）   预约单建立 且 at 与 at_time_expected 分钟级相等（place_ok）
+C-5 下单（新；本任务独有分支）  预约单建立 且 at 与 at_time_expected 分钟级相等（place_ok）
                 且 没有"该写单却直接执行"（time_error = false）
                 · 明细：place_ok、time_error；steps_ok 仅记录、不挡 C-5（结果导向）
+                · 注：C-5 按任务族取分支——TC6 = 预约单检查；TC7 的 C-5 = 记忆使用（见 3.8）
 
 同行落盘：{"C-1": true, "C-2": true, "C-3": true, "C-4": true, "C-5": true,
           "place_ok": true, "steps_ok": true, "settle_ok": true, "time_error": false}
@@ -925,8 +926,9 @@ record 里新增可选块（仅 TC 任务）：
      C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
      C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                   allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
-     C-5 记忆使用   轨迹里存在一次成功的 memory.read（read_ok）→ 规则判定，不调模型
+     C-5 记忆使用（本任务独有分支）  轨迹里存在一次成功的 memory.read（read_ok）→ 规则判定，不调模型
                   （本期只判"读过"；读与做的先后顺序暂不检查）
+                  · 注：C-5 按任务族取分支——TC7 = 记忆使用检查；TC6 的 C-5 = 预约单（见 2.8）
   ② 遵守性与 summary
      遵守性 = C-2（instant_conditions 达成即"按记忆做对了"）；
      本期示例 forbidden_actions 为空；日后禁令型记忆落地时，forbidden 需结构化、在此加规则检查；
@@ -1057,4 +1059,6 @@ TC7A 全程零大模型复判：
    summary 语义不在管线内校验（要防失实摘要，放 SFT 数据侧抽查）
 18 TC7A 也不做大模型复判（2026-10-12 定）：C-5 记忆使用（read_ok）改规则判定；
    遵守性由 C-2 承担；summary 不校验；D6_TC7A.md 模板删除
+19 C-5 为任务族独有编号（2026-10-13 记）：TC6 的 C-5 = 预约单检查（下单）；
+   TC7 的 C-5 = 记忆使用检查；两侧各自在 2.8 / 3.8 写全，编号相同、语义按类别定义
 ```
