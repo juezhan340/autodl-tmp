@@ -27,6 +27,15 @@
 >      遵守性由 C-2 承担；summary 不校验；D6_TC7A 模板删除
 >   8  required_calls 收敛（2026-10-13 定）：base_task.required_observations 更名并泛化为
 >      required_calls（"必须发生过的成功调用"）；memory_task 的 required_calls 删除
+>   9  required_observations → required_calls 的替代口径（2026-10-13 定）：
+>      旧字段实际只被 T4 使用（"拒绝前必须查过被拒设备"；两个批次实测 T4 全非空、其余类别全空），
+>      语义 = "必须先成功调用过某工具查某对象"，与 required_calls 同构。替代映射两行：
+>        {"kind":"device","device_id":X} → {"tool":"inspect_device","device_id":X}
+>        {"kind":"room","room_id":X}     → {"tool":"inspect_room","room_id":X}
+>      判定不变：成功事件里 tool_name 匹配 + 条目其余键做参数子集匹配
+>      （op / device_id / room_id …）；旧 D4 的可选 field 检查无人使用，要用就加可选 "field"。
+>      老五类继续用 required_observations（老管线冻结）；TC 管线只用 required_calls；
+>      统一迁移时按上面两行在读入层做 shim，无损。
 > 设备变更（2026-10-12 记）：计划新增空气净化器 air_purifier（id_token=purifier，
 > device_id 形如 device_bedroom_purifier），只有 turn_on / turn_off 两个动作，
 > state 只有 {on}，没有 mode / level / target；用于 TC6 / TC7 场景（如"花粉过敏 → 开净化器"）。
