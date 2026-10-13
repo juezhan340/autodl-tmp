@@ -7,7 +7,8 @@
 > memory_initial、memory_expected、forbidden_actions、required_calls（2026-10-13 起归 base_task，见 1.2）、
 > session_turns、turns[]、kind（落盘沿用老键名 category）、tc_schema。
 > required_effects 已按 2026-10-11 决定删除。
-> 本文只走两类：TC6A（绝对时间一次性预约）与 TC7A（读预置记忆），从提示词到轨迹到数据集完整呈现。
+> 本文只走两类：TC6A（绝对时间一次性预约）与 TC7A（读预置记忆），从提示词到轨迹到数据集完整呈现；
+> TC6B（相对时间调度）与 TC7B（单轮读写记忆）的完整管线见 06 文档。
 > 2026-10-11 追加调整：base_time 并入 s0（home 顶层键），world 不再带 base_time；
 > 同时补全 2.3 / 3.3 的 D2-2 示例——task 三块（base_task / time_task / memory_task）都要进提示词。
 > 2026-10-11 决议（TC 判定口径）：
