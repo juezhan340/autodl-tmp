@@ -4,7 +4,7 @@
 > 判定真值进 task（base_task / time_task / memory_task 三块）、
 > 世界初值进 world；time_mention 归 time_task，tc_schema 放蓝图顶层。
 > 名词按 2026-10-10 定稿：time_mention、at_time_expected、offset_minutes、due_steps、due_conditions、
-> memory_initial、memory_expected、forbidden_actions、required_calls（待审）、
+> memory_initial、memory_expected、forbidden_actions、required_calls（2026-10-13 起归 base_task，见 1.2）、
 > session_turns、turns[]、kind（落盘沿用老键名 category）、tc_schema。
 > required_effects 已按 2026-10-11 决定删除。
 > 本文只走两类：TC6A（绝对时间一次性预约）与 TC7A（读预置记忆），从提示词到轨迹到数据集完整呈现。
@@ -25,6 +25,8 @@
 >      d6="跳过"、不发请求；summary 语义不在管线内校验
 >   7  TC7A 也不做大模型复判（2026-10-12 定）：read_ok 改为 C-5 规则标签；
 >      遵守性由 C-2 承担；summary 不校验；D6_TC7A 模板删除
+>   8  required_calls 收敛（2026-10-13 定）：base_task.required_observations 更名并泛化为
+>      required_calls（"必须发生过的成功调用"）；memory_task 的 required_calls 删除
 > 设备变更（2026-10-12 记）：计划新增空气净化器 air_purifier（id_token=purifier，
 > device_id 形如 device_bedroom_purifier），只有 turn_on / turn_off 两个动作，
 > state 只有 {on}，没有 mode / level / target；用于 TC6 / TC7 场景（如"花粉过敏 → 开净化器"）。
@@ -123,7 +125,7 @@ TC_dataset.jsonl（沿用现有行结构：scenario / record / labels / category
       "intent": "今晚睡前把客厅灯关掉",
       "instant_conditions": [],
       "keep": [],
-      "required_observations": [],
+      "required_calls": [],
       "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}
     },
     "time_task": {
@@ -168,18 +170,26 @@ D5 组装运行时 scenario（对齐现有 blueprint_to_scenario）：
      落盘建议沿用 category，避免两套键名
 
 task 的三块：
-  base_task    必有；字段：intent / instant_conditions / keep / required_observations /
+  base_task    必有；字段：intent / instant_conditions / keep / required_calls /
                expected_finish；intent 与 expected_finish 不能为空
                （conditions 更名为 instant_conditions："写单这一刻"的目标；
                 TC6 固定为空数组——现在不做任何事）
+               （required_observations 更名为 required_calls：写"必须发生过的成功调用"，
+                条目形如 {"tool": "<工具名>", ...定位参数}。例：
+                  {"tool":"inspect_device","device_id":"..."}   T4 式：拒绝前必须先查过
+                  {"tool":"memory","op":"read"}                 TC7A：必须读过记忆
+                  {"tool":"inspect_time"}                       TC6 可选：必须先读时钟
+                判定：轨迹里存在一次成功（ok=true）的匹配调用 → 过；空数组过）
   time_task    时间相关：time_mention / at_time_expected / due_steps / due_conditions
                （TC6B 还有 offset_minutes）；非时间任务为 {}
                （due_conditions = "到点执行后"的目标，定时终态判它；
                 eq 比 value，ge/le 比 s0 初值严格变向，与 T1~T5 同口径）
-  memory_task  记忆相关：memory_initial / memory_expected / forbidden_actions /
-               required_calls / turns；非记忆任务为 {}
+  memory_task  记忆相关：memory_initial / memory_expected / forbidden_actions / turns；
+               非记忆任务为 {}
+               （原 memory_task.required_calls 已删：这类"必须调用"统一放 base_task.required_calls）
   required_effects 已删除，正面约束一律写对应块的 conditions
-  （注：老管线 T1~T5 的 task.conditions 键不动；instant_conditions 只出现在 TC 三块结构里）
+  （注：老管线 T1~T5 的 task.conditions / required_observations 键不动；
+    instant_conditions 与 required_calls 只出现在 TC 三块结构里）
 ```
 
 ### 1.3 A 提示词装配（不改老提示词）
@@ -209,7 +219,7 @@ TC6A 是什么
 输出字段（task 三块；intent 与 expected_finish 必填、不能为空）
 {"base_task": {"intent":"一句话目标",
                "instant_conditions":[],
-               "keep":[], "required_observations":[],
+               "keep":[], "required_calls":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {"time_mention":"用户话里的时间说法",
                "at_time_expected":"YYYY-MM-DD HH:MM",
@@ -225,6 +235,7 @@ TC6A 是什么
   time_mention 时间点准确，但不能直接写标准格式（那是答案，不是题面说法）
   instant_conditions 描述当前时刻要满足的状态；TC6A 固定写空数组
   due_conditions 描述涉及时间任务"到点执行后终态应满足什么"（定时终态的判定对象）
+  required_calls 本期固定为空（要"必须先读时钟"这类要求时再写，例 {"tool":"inspect_time"}）
   时间相关字段全部放 time_task；memory_task 固定为 {}（TC6A 不用记忆）
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC6A）
 
@@ -244,7 +255,7 @@ TC6A 是什么
 正确输出：
 {"base_task": {"intent":"今晚睡前把客厅灯关掉",
                "instant_conditions":[],
-               "keep":[], "required_observations":[],
+               "keep":[], "required_calls":[],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
                "due_steps":[{"device_id":"device_living_light",
@@ -266,7 +277,7 @@ base_time：{{base_time}}
 ```json
 {"base_task": {"intent": "今晚睡前把客厅灯关掉",
                "instant_conditions": [],
-               "keep": [], "required_observations": [],
+               "keep": [], "required_calls": [],
                "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}},
  "time_task": {"time_mention": "今晚10点",
                "at_time_expected": "2026-10-10 22:00",
@@ -310,7 +321,7 @@ task 三块都是输入：动作看 time_task 的 due_steps，时间看 time_men
 intent：今晚睡前把客厅灯关掉
 task：{"base_task":{"intent":"今晚睡前把客厅灯关掉",
                     "instant_conditions":[],
-                    "keep":[],"required_observations":[],
+                    "keep":[],"required_calls":[],
                     "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
        "time_task":{"time_mention":"今晚10点","at_time_expected":"2026-10-10 22:00",
                     "due_steps":[{"device_id":"device_living_light",
@@ -500,7 +511,7 @@ C-2 终态（调整）  两个分支，共用同一套条件检查器：
                   = 当前时刻执行完的结果），步骤 = 模型实际提交的 steps（不换成 due_steps；
                   结果对就可以），比对 = 影子终态满足 due_conditions（eq 比 value；
                   ge/le 比 s0 初值严格变向）→ settle_ok（掉线本期不处理）
-C-3 观察        required_observations 都有成功 inspect（空数组过；TC6A 固定为空 → 恒过）
+C-3 必需调用    required_calls 都出现过成功调用（空数组过；TC6A 固定为空 → 恒过）
 C-4 finish      outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                 expected_finish.allowed_reason_codes 里；出现 facts 失败；
                 completed 带 reason_code 失败
@@ -539,7 +550,7 @@ summary 的语义也不在管线内校验（C-4 只看 outcome / reason_code / f
     "task": {
       "base_task": {"intent": "今晚睡前把客厅灯关掉",
                     "instant_conditions": [],
-                    "keep": [], "required_observations": [],
+                    "keep": [], "required_calls": [],
                     "expected_finish": {"outcome": "completed",
                                         "allowed_reason_codes": []}},
       "time_task": {"time_mention": "今晚10点",
@@ -588,13 +599,12 @@ TC7A 是什么
 {"base_task": {"intent":"一句话目标",
                "instant_conditions":[{"device_id":"...","field":"...",
                                       "operator":"eq","value":...}],
-               "keep":[], "required_observations":[],
+               "keep":[], "required_calls":[{"tool":"memory","op":"read"}],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {},
  "memory_task": {"memory_initial":"开局记忆里已有的内容",
                  "memory_expected":"",
-                 "forbidden_actions":["不许做的动作"],
-                 "required_calls":[]}}
+                 "forbidden_actions":["不许做的动作"]}}
 
 硬规则
   memory_initial ≤200 token，必须是"偏好/约束"，不能是"现在就做某个动作"的指令
@@ -602,14 +612,18 @@ TC7A 是什么
   例：s0 没有空调，就不能写"空调固定 25.5 度"
   memory_initial 与用户请求相关，但请求不能直接复述它（具体数值尤其不能漏进请求）
   forbidden_actions 0~2 条（没有禁令就写空数组）；写的话必须是 s0 里真实存在设备的动作
+  必须发生的调用写进 base_task.required_calls（例：{"tool":"memory","op":"read"}）；
+  TC7A 固定要求读过记忆；memory_task 不再有 required_calls
   正面约束（必须达成的效果）写进 base_task.instant_conditions；不再使用 required_effects
   记忆里的数值偏好要原样落成 eq 目标值（例：25.5 → target eq 25.5）
-  记忆相关字段全部放 memory_task；time_task 固定为 {}（TC7A 不用时间调度）
+  记忆内容字段（memory_initial / memory_expected / forbidden_actions）放 memory_task；
+  time_task 固定为 {}（TC7A 不用时间调度）
   注意：task JSON 里不写类别；类别由模板决定，蓝图顶层写 category（如 TC7A）
 
 小例子
 对  memory_initial="睡觉时空调固定 25.5 度、制冷"
     forbidden_actions=[]
+    base_task.required_calls=[{"tool":"memory","op":"read"}]
     base_task.instant_conditions=[{"device_id":"device_bedroom_climate","field":"on",
                                    "operator":"eq","value":true},
                                   {"device_id":"device_bedroom_climate","field":"target",
@@ -631,13 +645,12 @@ TC7A 是什么
                                       "operator":"eq","value":25.5},
                                      {"device_id":"device_bedroom_climate","field":"mode",
                                       "operator":"eq","value":"cool"}],
-               "keep":[], "required_observations":[],
+               "keep":[], "required_calls":[{"tool":"memory","op":"read"}],
                "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
  "time_task": {},
  "memory_task": {"memory_initial":"睡觉时空调固定 25.5 度、制冷",
                  "memory_expected":"",
-                 "forbidden_actions":[],
-                 "required_calls":[]}}
+                 "forbidden_actions":[]}}
 
 不要照抄例子；本轮按 {{s0}} 与 {{persona}} 另写。
 
@@ -657,13 +670,12 @@ base_time：{{base_time}}
                                        "operator": "eq", "value": 25.5},
                                       {"device_id": "device_bedroom_climate", "field": "mode",
                                        "operator": "eq", "value": "cool"}],
-               "keep": [], "required_observations": [],
+               "keep": [], "required_calls": [{"tool": "memory", "op": "read"}],
                "expected_finish": {"outcome": "completed", "allowed_reason_codes": []}},
  "time_task": {},
  "memory_task": {"memory_initial": "睡觉时空调固定 25.5 度、制冷",
                  "memory_expected": "",
-                 "forbidden_actions": [],
-                 "required_calls": []}}
+                 "forbidden_actions": []}}
 ```
 
 ```text
@@ -706,12 +718,11 @@ task：{"base_task":{"intent":"卧室热，按记忆把空调开到 25.5 度制�
                                            "operator":"eq","value":25.5},
                                           {"device_id":"device_bedroom_climate","field":"mode",
                                            "operator":"eq","value":"cool"}],
-                    "keep":[],"required_observations":[],
+                    "keep":[],"required_calls":[{"tool":"memory","op":"read"}],
                     "expected_finish":{"outcome":"completed","allowed_reason_codes":[]}},
        "time_task":{},
        "memory_task":{"memory_initial":"睡觉时空调固定 25.5 度、制冷",
-                      "memory_expected":"","forbidden_actions":[],
-                      "required_calls":[]}}
+                      "memory_expected":"","forbidden_actions":[]}}
 可用显示名：卧室空调、卧室加湿器
 正确输出：卧室有点热，把空调开一下。
 
@@ -923,11 +934,12 @@ record 里新增可选块（仅 TC 任务）：
                     eq 比 value；ge/le 比 s0 初值严格变向 —— TC7A 走这一支
                   · 定时终态：影子执行（新的 s0 + 模型 steps）终态满足 due_conditions
                     —— TC7A 不用（time_task 为空、没有 due_conditions）
-     C-3 观察     required_observations 都有成功 inspect（空数组过；TC7A 固定为空 → 恒过）
+     C-3 必需调用   required_calls 都出现过成功调用（空数组过）——TC7A 的"必须读过记忆"
+                  就是这里的一个条目 {"tool":"memory","op":"read"}
      C-4 finish   outcome 与 expected_finish.outcome 对齐；refused 的 reason_code 必须落在
                   allowed_reason_codes 里；出现 facts 失败；completed 带 reason_code 失败
-     C-5 记忆使用（本任务独有分支）  轨迹里存在一次成功的 memory.read（read_ok）→ 规则判定，不调模型
-                  （本期只判"读过"；读与做的先后顺序暂不检查）
+     C-5 记忆使用（本任务独有分支）  = required_calls 里记忆条目的检查结果（本示例 memory.read），
+                  与 C-3 同一份数据、单独汇报（本期只判"读过"；读与做的先后顺序暂不检查）
                   · 注：C-5 按任务族取分支——TC7 = 记忆使用检查；TC6 的 C-5 = 预约单（见 2.8）
   ② 遵守性与 summary
      遵守性 = C-2（instant_conditions 达成即"按记忆做对了"）；
@@ -940,7 +952,7 @@ record 里新增可选块（仅 TC 任务）：
 
 ```text
 TC7A 不进 D6 语义复核——和 TC6A 同理，让大模型审这条轨迹没有必要：
-  · 读没读记忆 → C-5 记忆使用（read_ok）：规则直接判（轨迹里有成功的 memory.read）
+  · 读没读记忆 → base_task.required_calls 里的记忆条目（memory.read）：C-3 通用检查、C-5 记忆切片
   · 做得对不对 → C-2 的即时终态分支：instant_conditions + keep 全达成
   · 禁止项     → 本期示例 forbidden_actions 为空；日后禁令型落地改成结构化规则检查
   · summary    → 不在管线内校验（C-4 只看 outcome / reason_code / facts）
@@ -975,13 +987,13 @@ TC7A 全程零大模型复判：
                                             "field": "target", "operator": "eq", "value": 25.5},
                                            {"device_id": "device_bedroom_climate",
                                             "field": "mode", "operator": "eq", "value": "cool"}],
-                    "keep": [], "required_observations": [],
+                    "keep": [], "required_calls": [{"tool": "memory", "op": "read"}],
                     "expected_finish": {"outcome": "completed",
                                         "allowed_reason_codes": []}},
       "time_task": {},
       "memory_task": {"memory_expected": "",
                       "forbidden_actions": [],
-                      "required_calls": [], "turns": []}
+                      "turns": []}
     },
     "episode_config": {"max_turns": 12, "max_tool_calls_per_turn": 1},
     "world": {"horizon_minutes": 10080,
@@ -1026,8 +1038,9 @@ TC7A 全程零大模型复判：
 ## 5 待确认点
 
 ```text
-1  required_calls 是否采用（TC7A 的 read_ok 已改为 C-5 规则标签，不再依赖它；
-   TC7C 第2轮的"必须读过记忆"可复用同一套规则扫描；是否还需要任务侧字段待定）
+1  required_calls（2026-10-13 定）：采用，并改放 base_task——替换原 required_observations，
+   语义泛化为"必须发生过的成功调用"（条目如 {"tool":"memory","op":"read"}）；
+   memory_task 的 required_calls 删除；C-3 做通用检查
 2  三块结构与空块约定：base_task 必有且 intent / expected_finish 非空；
    time_task / memory_task 可为 {}——已按此执行，确认即可
 3  TC7A 的 forbidden_actions 数据结构（现在例子是字符串列表；
@@ -1057,8 +1070,9 @@ TC7A 全程零大模型复判：
    禁令型 / 习惯型示例未覆盖，后续按需补
 17 TC6A 不做 D6 大模型复判（2026-10-12 定）：C-1~C-5 全规则判定，d6="跳过"、不发请求；
    summary 语义不在管线内校验（要防失实摘要，放 SFT 数据侧抽查）
-18 TC7A 也不做大模型复判（2026-10-12 定）：C-5 记忆使用（read_ok）改规则判定；
-   遵守性由 C-2 承担；summary 不校验；D6_TC7A.md 模板删除
+18 TC7A 也不做大模型复判（2026-10-12 定）：C-5 记忆使用改规则判定（数据来自
+   base_task.required_calls 的记忆条目）；遵守性由 C-2 承担；summary 不校验；D6_TC7A.md 模板删除
 19 C-5 为任务族独有编号（2026-10-13 记）：TC6 的 C-5 = 预约单检查（下单）；
-   TC7 的 C-5 = 记忆使用检查；两侧各自在 2.8 / 3.8 写全，编号相同、语义按类别定义
+   TC7 的 C-5 = 记忆使用检查（数据来自 base_task.required_calls 的记忆条目）；
+   两侧各自在 2.8 / 3.8 写全，编号相同、语义按类别定义
 ```
